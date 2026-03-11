@@ -1,0 +1,414 @@
+import React, { useEffect, useState } from 'react';
+import {
+  View, Text, TextInput, TouchableOpacity, StyleSheet, FlatList,
+  ActivityIndicator, Alert, Image, Modal, ScrollView,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { colors } from '../theme/colors';
+import { useAuth } from '../contexts/AuthContext';
+import {
+  getFriendRequests, acceptFriendRequest, rejectFriendRequest,
+  getFriends, getUserProfile, searchUserByUsername, sendFriendRequest,
+  areFriends, hasPendingRequest, getUserStats, getMovieList,
+  type FriendRequest, type UserProfile, type MovieActivity,
+} from '../lib/firestore';
+
+type Tab = 'friends' | 'requests';
+
+export default function FriendsScreen() {
+  const insets = useSafeAreaInsets();
+  const { user, profile } = useAuth();
+  const [requests, setRequests] = useState<FriendRequest[]>([]);
+  const [friends, setFriends] = useState<any[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResult, setSearchResult] = useState<any>(null);
+  const [isFriend, setIsFriend] = useState(false);
+  const [hasPending, setHasPending] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState<Tab>('friends');
+  const [selectedFriend, setSelectedFriend] = useState<any>(null);
+  const [friendStats, setFriendStats] = useState<any>(null);
+  const [friendFavs, setFriendFavs] = useState<MovieActivity[]>([]);
+  const [friendWatched, setFriendWatched] = useState<MovieActivity[]>([]);
+  const [friendWatchlist, setFriendWatchlist] = useState<MovieActivity[]>([]);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [friendTab, setFriendTab] = useState<'watched' | 'watchlist' | 'favorites'>('watched');
+
+  const openFriendProfile = async (friend: any) => {
+    setSelectedFriend(friend);
+    setFriendTab('watched');
+    setProfileLoading(true);
+    try {
+      const [stats, favs, watched, watchlist] = await Promise.all([
+        getUserStats(friend.uid),
+        getMovieList(friend.uid, 'favorite'),
+        getMovieList(friend.uid, 'watched'),
+        getMovieList(friend.uid, 'toWatch'),
+      ]);
+      setFriendStats(stats);
+      setFriendFavs(favs);
+      setFriendWatched(watched);
+      setFriendWatchlist(watchlist);
+    } catch {} finally { setProfileLoading(false); }
+  };
+
+  const loadData = async () => {
+    if (!user?.uid) return;
+    setLoading(true);
+    try {
+      const [reqs, friendIds] = await Promise.all([getFriendRequests(user.uid), getFriends(user.uid)]);
+      setRequests(reqs);
+      const profiles = await Promise.all(friendIds.map(id => getUserProfile(id)));
+      setFriends(profiles.filter(Boolean));
+    } catch {} finally { setLoading(false); }
+  };
+
+  useEffect(() => { loadData(); }, [user?.uid]);
+
+  const handleAccept = async (req: FriendRequest) => {
+    await acceptFriendRequest(user!.uid, req.id, req.fromUserId);
+    loadData();
+  };
+
+  const handleReject = async (req: FriendRequest) => {
+    await rejectFriendRequest(user!.uid, req.id);
+    loadData();
+  };
+
+  const handleSearch = async () => {
+    if (!searchQuery.trim() || !user?.uid) return;
+    setSearching(true);
+    setSearchResult(null);
+    try {
+      const found = await searchUserByUsername(searchQuery.trim());
+      if (!found) { Alert.alert('Not Found', 'No user with that username.'); return; }
+      if (found.uid === user.uid) { Alert.alert('Error', "That's you!"); return; }
+      setSearchResult(found);
+      const [friendStatus, pendingStatus] = await Promise.all([
+        areFriends(user.uid, found.uid),
+        hasPendingRequest(user.uid, found.uid),
+      ]);
+      setIsFriend(friendStatus);
+      setHasPending(pendingStatus);
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Search failed');
+    } finally { setSearching(false); }
+  };
+
+  const handleSendRequest = async () => {
+    if (!user?.uid || !searchResult) return;
+    setSearching(true);
+    try {
+      await sendFriendRequest(user.uid, profile?.displayName || 'User', searchResult.uid);
+      setHasPending(true);
+      Alert.alert('Sent!', `Friend request sent to ${searchResult.displayName}`);
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to send request');
+    } finally { setSearching(false); }
+  };
+
+  const tabs = [
+    { id: 'friends' as Tab, label: 'My Friends', icon: 'people-outline', count: friends.length },
+    { id: 'requests' as Tab, label: 'Requests', icon: 'notifications-outline', count: requests.length },
+  ];
+
+  return (
+    <View style={[s.container, { paddingTop: insets.top + 16 }]}>
+      <Text style={s.title}>Friends</Text>
+      <Text style={s.subtitle}>Connect with other movie lovers</Text>
+
+      {/* Search */}
+      <View style={s.searchCard}>
+        <Text style={s.searchLabel}>FIND PEOPLE</Text>
+        <View style={s.searchRow}>
+          <View style={{ flex: 1, position: 'relative' }}>
+            <Ionicons name="search" size={14} color={colors.subtle} style={{ position: 'absolute', left: 12, top: 13, zIndex: 1 }} />
+            <TextInput
+              style={s.input}
+              placeholder="Search by username…"
+              placeholderTextColor={colors.subtle}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              onSubmitEditing={handleSearch}
+              returnKeyType="search"
+            />
+          </View>
+          <TouchableOpacity style={s.searchBtn} onPress={handleSearch} disabled={searching || !searchQuery.trim()}>
+            {searching ? <ActivityIndicator color={colors.white} size="small" /> : <Text style={s.searchBtnText}>Search</Text>}
+          </TouchableOpacity>
+        </View>
+
+        {/* Search result */}
+        {searchResult && (
+          <View style={s.resultCard}>
+            <View style={s.avatar}>
+              {searchResult.photoURL && !searchResult.photoURL.startsWith('http')
+                ? <Text style={{ fontSize: 22 }}>{searchResult.photoURL}</Text>
+                : searchResult.photoURL?.startsWith('http')
+                  ? <Image source={{ uri: searchResult.photoURL }} style={{ width: '100%', height: '100%', borderRadius: 12 }} />
+                  : <Text style={s.avatarText}>{(searchResult.displayName || 'U').charAt(0).toUpperCase()}</Text>}
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={s.name}>{searchResult.displayName}</Text>
+              <Text style={s.sub}>View profile</Text>
+            </View>
+            {isFriend ? (
+              <View style={s.friendBadge}><Ionicons name="checkmark" size={13} color="#4ade80" /><Text style={s.friendBadgeText}>Friends</Text></View>
+            ) : hasPending ? (
+              <View style={s.pendingBadge}><Text style={s.pendingText}>Sent ✓</Text></View>
+            ) : (
+              <TouchableOpacity style={s.addBtn} onPress={handleSendRequest} disabled={searching}>
+                <Ionicons name="person-add" size={13} color={colors.white} /><Text style={s.addBtnText}>Add</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+      </View>
+
+      {/* Tabs */}
+      <View style={s.tabRow}>
+        {tabs.map(t => (
+          <TouchableOpacity key={t.id} style={[s.tab, tab === t.id && s.tabActive]} onPress={() => setTab(t.id)}>
+            <Ionicons name={t.icon as any} size={14} color={tab === t.id ? colors.white : colors.subtle} />
+            <Text style={[s.tabText, tab === t.id && s.tabTextActive]}>{t.label}</Text>
+            {t.count > 0 && (
+              <View style={[s.tabBadge, t.id === 'requests' && { backgroundColor: colors.red, borderColor: 'transparent' }]}>
+                <Text style={[s.tabBadgeText, t.id === 'requests' && { color: colors.white }]}>{t.count}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {loading ? <ActivityIndicator color={colors.red} style={{ marginTop: 40 }} /> : (
+        <FlatList
+          data={tab === 'friends' ? friends : requests}
+          keyExtractor={(item, i) => (tab === 'friends' ? item?.uid || i.toString() : item?.id || i.toString())}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 100 }}
+          ListEmptyComponent={
+            <View style={s.empty}>
+              <Ionicons name={tab === 'friends' ? 'people-outline' : 'notifications-outline'} size={40} color="rgba(255,255,255,0.1)" />
+              <Text style={s.emptyText}>{tab === 'friends' ? 'No friends yet.' : 'No pending requests.'}</Text>
+              <Text style={s.emptySub}>{tab === 'friends' ? 'Search for users above to start connecting.' : 'When someone sends you a request, it\'ll appear here.'}</Text>
+            </View>
+          }
+          renderItem={({ item }) => {
+            if (tab === 'requests') {
+              const req = item as FriendRequest;
+              return (
+                <View style={s.requestCard}>
+                  <View style={s.avatar}><Text style={{ fontSize: 22 }}>{req.fromUsername.charAt(0).toUpperCase()}</Text></View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.name}>{req.fromUsername}</Text>
+                    <Text style={s.sub}>Wants to connect with you</Text>
+                  </View>
+                  <TouchableOpacity style={s.acceptBtn} onPress={() => handleAccept(req)}>
+                    <Ionicons name="checkmark" size={16} color="#4ade80" /><Text style={{ color: '#4ade80', fontSize: 12, fontWeight: '700' }}>Accept</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={s.rejectBtn} onPress={() => handleReject(req)}>
+                    <Ionicons name="close" size={16} color={colors.muted} />
+                  </TouchableOpacity>
+                </View>
+              );
+            }
+            const friend = item;
+            const isEmoji = friend?.photoURL && !friend.photoURL.startsWith('http');
+            const isUrl = friend?.photoURL && friend.photoURL.startsWith('http');
+            return (
+              <TouchableOpacity style={s.friendCard} activeOpacity={0.7} onPress={() => openFriendProfile(friend)}>
+                <View style={s.avatar}>
+                  {isUrl ? <Image source={{ uri: friend.photoURL }} style={{ width: '100%', height: '100%', borderRadius: 12 }} />
+                    : isEmoji ? <Text style={{ fontSize: 22 }}>{friend.photoURL}</Text>
+                    : <Text style={s.avatarText}>{(friend?.displayName || '?').charAt(0).toUpperCase()}</Text>}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.name}>{friend?.displayName || 'User'}</Text>
+                  <Text style={s.sub}>View profile →</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={16} color={colors.subtle} />
+              </TouchableOpacity>
+            );
+          }}
+        />
+      )}
+      {/* Friend Profile Modal */}
+      <Modal visible={!!selectedFriend} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setSelectedFriend(null)}>
+        <View style={s.modalContainer}>
+          <View style={s.modalHeader}>
+            <TouchableOpacity onPress={() => setSelectedFriend(null)}>
+              <Ionicons name="close" size={24} color={colors.text} />
+            </TouchableOpacity>
+            <Text style={s.modalTitle}>Profile</Text>
+            <View style={{ width: 24 }} />
+          </View>
+          {profileLoading ? (
+            <ActivityIndicator color={colors.red} style={{ marginTop: 60 }} />
+          ) : selectedFriend && (
+            <ScrollView contentContainerStyle={s.modalContent}>
+              <View style={s.profileAvatar}>
+                {selectedFriend.photoURL?.startsWith('http')
+                  ? <Image source={{ uri: selectedFriend.photoURL }} style={{ width: '100%', height: '100%', borderRadius: 40 }} />
+                  : selectedFriend.photoURL && !selectedFriend.photoURL.startsWith('http')
+                    ? <Text style={{ fontSize: 36 }}>{selectedFriend.photoURL}</Text>
+                    : <Text style={s.profileAvatarText}>{(selectedFriend.displayName || '?').charAt(0).toUpperCase()}</Text>}
+              </View>
+              <Text style={s.profileName}>{selectedFriend.displayName || 'User'}</Text>
+
+              {friendStats && (
+                <>
+                  <View style={s.statsRow}>
+                    <View style={s.statBox}>
+                      <Text style={s.statNum}>{friendStats.totalWatched}</Text>
+                      <Text style={s.statLabel}>Watched</Text>
+                    </View>
+                    <View style={s.statBox}>
+                      <Text style={s.statNum}>{friendStats.totalToWatch}</Text>
+                      <Text style={s.statLabel}>Watchlist</Text>
+                    </View>
+                    <View style={s.statBox}>
+                      <Text style={s.statNum}>{friendStats.totalFavorites}</Text>
+                      <Text style={s.statLabel}>Favorites</Text>
+                    </View>
+                    <View style={s.statBox}>
+                      <Text style={s.statNum}>{friendStats.averageRating || '—'}</Text>
+                      <Text style={s.statLabel}>Avg</Text>
+                    </View>
+                  </View>
+
+                  {friendStats.topGenres.length > 0 && (
+                    <View style={s.genreSection}>
+                      <Text style={s.sectionLabel}>TOP GENRES</Text>
+                      <View style={s.genreRow}>
+                        {friendStats.topGenres.map((g: string, i: number) => (
+                          <View key={i} style={s.genrePill}><Text style={s.genreText}>{g}</Text></View>
+                        ))}
+                      </View>
+                    </View>
+                  )}
+                </>
+              )}
+
+              {/* Movie list tabs */}
+              <View style={s.friendTabRow}>
+                {([['watched', 'Watched', friendWatched], ['watchlist', 'Watchlist', friendWatchlist], ['favorites', 'Favorites', friendFavs]] as const).map(([key, label, list]) => (
+                  <TouchableOpacity key={key} style={[s.friendTabBtn, friendTab === key && s.friendTabActive]} onPress={() => setFriendTab(key as any)}>
+                    <Text style={[s.friendTabText, friendTab === key && s.friendTabTextActive]}>{label}</Text>
+                    <Text style={[s.friendTabCount, friendTab === key && { color: colors.red }]}>{list.length}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* Movie list */}
+              {(friendTab === 'watched' ? friendWatched : friendTab === 'watchlist' ? friendWatchlist : friendFavs).length === 0 ? (
+                <View style={s.friendMovieEmpty}>
+                  <Ionicons name={friendTab === 'watched' ? 'eye-outline' : friendTab === 'watchlist' ? 'bookmark-outline' : 'heart-outline'} size={32} color="rgba(255,255,255,0.1)" />
+                  <Text style={s.friendMovieEmptyText}>No {friendTab} movies yet</Text>
+                </View>
+              ) : (
+                <View style={s.friendMovieGrid}>
+                  {(friendTab === 'watched' ? friendWatched : friendTab === 'watchlist' ? friendWatchlist : friendFavs).map((m, i) => (
+                    <View key={m.movieId || i} style={s.friendMovieCard}>
+                      {m.poster ? (
+                        <Image source={{ uri: m.poster }} style={s.friendMoviePoster} />
+                      ) : (
+                        <View style={[s.friendMoviePoster, { backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' }]}>
+                          <Ionicons name="film-outline" size={20} color={colors.subtle} />
+                        </View>
+                      )}
+                      <Text style={s.friendMovieTitle} numberOfLines={1}>{m.title}</Text>
+                      <View style={s.friendMovieMeta}>
+                        {m.year ? <Text style={s.friendMovieYear}>{m.year}</Text> : null}
+                        {m.rating && m.rating > 0 ? <Text style={s.friendMovieRating}>★ {m.rating.toFixed(1)}</Text> : null}
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </ScrollView>
+          )}
+        </View>
+      </Modal>
+    </View>
+  );
+}
+
+const s = StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.black, paddingHorizontal: 0 },
+  title: { fontSize: 24, fontWeight: '900', color: colors.white, paddingHorizontal: 16 },
+  subtitle: { color: colors.subtle, fontSize: 13, paddingHorizontal: 16, marginTop: 2, marginBottom: 16 },
+  // Search card
+  searchCard: { marginHorizontal: 16, backgroundColor: 'rgba(255,255,255,0.02)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', borderRadius: 16, padding: 16, marginBottom: 16 },
+  searchLabel: { color: colors.muted, fontSize: 11, fontWeight: '700', letterSpacing: 0.8, marginBottom: 10 },
+  searchRow: { flexDirection: 'row', gap: 10 },
+  input: { backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', borderRadius: 12, padding: 12, paddingLeft: 36, fontSize: 14, color: colors.text },
+  searchBtn: { backgroundColor: colors.red, borderRadius: 12, paddingHorizontal: 18, justifyContent: 'center' },
+  searchBtnText: { color: colors.white, fontWeight: '700', fontSize: 14 },
+  resultCard: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 14, padding: 12, backgroundColor: 'rgba(255,255,255,0.02)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', borderRadius: 12 },
+  friendBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(74,222,128,0.1)', borderWidth: 1, borderColor: 'rgba(74,222,128,0.3)', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
+  friendBadgeText: { color: '#4ade80', fontSize: 12, fontWeight: '700' },
+  pendingBadge: { backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
+  pendingText: { color: colors.subtle, fontSize: 12, fontWeight: '600' },
+  addBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.red, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8 },
+  addBtnText: { color: colors.white, fontSize: 12, fontWeight: '700' },
+  // Tabs
+  tabRow: { flexDirection: 'row', paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.07)', marginBottom: 16 },
+  tab: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 2, borderBottomColor: 'transparent', marginBottom: -1 },
+  tabActive: { borderBottomColor: colors.red },
+  tabText: { color: colors.subtle, fontSize: 14, fontWeight: '600' },
+  tabTextActive: { color: colors.white, fontWeight: '700' },
+  tabBadge: { backgroundColor: 'rgba(255,255,255,0.07)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', borderRadius: 99, paddingHorizontal: 6, paddingVertical: 1, minWidth: 20, alignItems: 'center' },
+  tabBadgeText: { color: colors.subtle, fontSize: 11, fontWeight: '700' },
+  // Cards
+  avatar: { width: 48, height: 48, borderRadius: 12, backgroundColor: 'rgba(229,9,20,0.2)', borderWidth: 2, borderColor: 'rgba(229,9,20,0.3)', alignItems: 'center', justifyContent: 'center' },
+  avatarText: { color: colors.white, fontSize: 18, fontWeight: '800' },
+  name: { color: colors.white, fontSize: 15, fontWeight: '700' },
+  sub: { color: colors.subtle, fontSize: 12, marginTop: 2 },
+  friendCard: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, backgroundColor: 'rgba(255,255,255,0.02)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', borderRadius: 12, marginBottom: 8 },
+  requestCard: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 14, backgroundColor: 'rgba(229,9,20,0.04)', borderWidth: 1, borderColor: 'rgba(229,9,20,0.15)', borderRadius: 12, marginBottom: 8 },
+  acceptBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(74,222,128,0.15)', borderWidth: 1, borderColor: 'rgba(74,222,128,0.3)', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8 },
+  rejectBtn: { backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  // Empty
+  empty: { alignItems: 'center', paddingVertical: 48 },
+  emptyText: { color: colors.subtle, fontSize: 14, fontWeight: '600', marginTop: 12 },
+  emptySub: { color: 'rgba(255,255,255,0.2)', fontSize: 13, marginTop: 4, textAlign: 'center' },
+  // Friend profile modal
+  modalContainer: { flex: 1, backgroundColor: colors.dark },
+  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 16, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.07)' },
+  modalTitle: { color: colors.white, fontSize: 17, fontWeight: '700' },
+  modalContent: { alignItems: 'center', padding: 24, paddingBottom: 60 },
+  profileAvatar: { width: 80, height: 80, borderRadius: 40, backgroundColor: 'rgba(229,9,20,0.2)', borderWidth: 3, borderColor: 'rgba(229,9,20,0.4)', alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
+  profileAvatarText: { color: colors.white, fontSize: 32, fontWeight: '800' },
+  profileName: { color: colors.white, fontSize: 22, fontWeight: '900', marginBottom: 20 },
+  statsRow: { flexDirection: 'row', gap: 12, marginBottom: 24, width: '100%' },
+  statBox: { flex: 1, alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.03)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', borderRadius: 12, paddingVertical: 14 },
+  statNum: { color: colors.white, fontSize: 20, fontWeight: '800' },
+  statLabel: { color: colors.subtle, fontSize: 11, fontWeight: '600', marginTop: 4 },
+  genreSection: { width: '100%', marginBottom: 24 },
+  sectionLabel: { color: colors.subtle, fontSize: 11, fontWeight: '700', letterSpacing: 0.8, marginBottom: 10 },
+  genreRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  genrePill: { backgroundColor: 'rgba(229,9,20,0.12)', borderWidth: 1, borderColor: 'rgba(229,9,20,0.3)', borderRadius: 99, paddingHorizontal: 10, paddingVertical: 4 },
+  genreText: { color: '#ff6b6b', fontSize: 12, fontWeight: '700' },
+  favsSection: { width: '100%' },
+  favItem: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 10, backgroundColor: 'rgba(255,255,255,0.02)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', borderRadius: 10, marginBottom: 8 },
+  favPoster: { width: 40, height: 60, borderRadius: 6 },
+  favTitle: { color: colors.text, fontSize: 14, fontWeight: '700' },
+  favSub: { color: colors.subtle, fontSize: 12, marginTop: 2 },
+  // Friend profile movie tabs & grid
+  friendTabRow: { flexDirection: 'row', width: '100%', borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.07)', marginBottom: 16 },
+  friendTabBtn: { flex: 1, alignItems: 'center', paddingVertical: 10, borderBottomWidth: 2, borderBottomColor: 'transparent' },
+  friendTabActive: { borderBottomColor: colors.red },
+  friendTabText: { color: colors.subtle, fontSize: 13, fontWeight: '600' },
+  friendTabTextActive: { color: colors.white, fontWeight: '700' },
+  friendTabCount: { color: colors.subtle, fontSize: 11, fontWeight: '700', marginTop: 2 },
+  friendMovieEmpty: { alignItems: 'center', paddingVertical: 40 },
+  friendMovieEmptyText: { color: colors.subtle, fontSize: 13, marginTop: 8 },
+  friendMovieGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, width: '100%' },
+  friendMovieCard: { width: '31%', borderRadius: 10, overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.03)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
+  friendMoviePoster: { width: '100%', aspectRatio: 2 / 3, borderTopLeftRadius: 10, borderTopRightRadius: 10 },
+  friendMovieTitle: { color: colors.text, fontSize: 11, fontWeight: '700', paddingHorizontal: 6, paddingTop: 6 },
+  friendMovieMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 6, paddingBottom: 6, paddingTop: 2 },
+  friendMovieYear: { color: colors.subtle, fontSize: 10 },
+  friendMovieRating: { color: colors.gold, fontSize: 10, fontWeight: '700' },
+});
