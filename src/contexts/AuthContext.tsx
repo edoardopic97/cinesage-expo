@@ -9,6 +9,7 @@ interface AuthContextType {
   loading: boolean;
   logout: () => Promise<void>;
   refreshProfile: () => Promise<void>;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -17,6 +18,7 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
   logout: async () => {},
   refreshProfile: async () => {},
+  refreshUser: async () => {},
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -30,11 +32,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setProfile(p);
   };
 
+  // Listen for auth state changes AND token refreshes (which happen after email verification)
   useEffect(() => {
     const timeout = setTimeout(() => setLoading(false), 8000);
     const unsub = onAuthStateChanged(auth, async (u) => {
       try {
-        setUser(u);
+        setUser(u ? { ...u } as User : null);
         if (u) {
           const p = await getUserProfile(u.uid);
           if (!p) {
@@ -57,13 +60,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => { unsub(); clearTimeout(timeout); };
   }, []);
 
+  const refreshUser = async () => {
+    if (!auth.currentUser) return;
+    await auth.currentUser.reload();
+    setUser({ ...auth.currentUser } as User);
+  };
+
   const logout = async () => {
     await signOut(auth);
     setProfile(null);
   };
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, logout, refreshProfile }}>
+    <AuthContext.Provider value={{ user, profile, loading, logout, refreshProfile, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

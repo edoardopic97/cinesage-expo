@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '../theme/colors';
+import { getGenreColor } from '../theme/genreColors';
 import { useAuth } from '../contexts/AuthContext';
 import { subscribeToMovieList, getUserStats, type MovieActivity } from '../lib/firestore';
 import { sortMovies, filterByGenre, searchByTitle, getUniqueGenres } from '../lib/movieUtils';
@@ -106,7 +107,7 @@ export default function ProfileScreen() {
         <Text style={s.listTitle} numberOfLines={1}>{movie.title}</Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
           {movie.year ? <Text style={s.miniYear}>{movie.year}</Text> : null}
-          {(movie.genres || []).slice(0, 2).map((g, i) => <View key={i} style={s.tinyGenre}><Text style={s.tinyGenreText}>{g}</Text></View>)}
+          {(movie.genres || []).slice(0, 2).map((g, i) => { const c = getGenreColor(g); return <View key={i} style={[s.tinyGenre, { backgroundColor: c.bg, borderColor: c.border }]}><Text style={[s.tinyGenreText, { color: c.text }]}>{g}</Text></View>; })}
         </View>
       </View>
       {movie.rating && movie.rating > 0 ? <View style={s.miniRating}><Ionicons name="star" size={11} color={colors.gold} /><Text style={s.miniRatingText}>{movie.rating.toFixed(1)}</Text></View> : null}

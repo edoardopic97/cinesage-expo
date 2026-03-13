@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Modal, ScrollView, ActivityIndicator } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 import { useAuth } from '../contexts/AuthContext';
@@ -33,7 +34,7 @@ export default function EditProfileModal({ visible, onClose, onSaved }: Props) {
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <View style={s.container}>
+      <SafeAreaView style={s.container} edges={['top', 'bottom']}>
         <View style={s.header}>
           <Text style={s.title}>Edit Profile</Text>
           <TouchableOpacity onPress={onClose}><Ionicons name="close" size={24} color={colors.muted} /></TouchableOpacity>
@@ -66,14 +67,14 @@ export default function EditProfileModal({ visible, onClose, onSaved }: Props) {
             </TouchableOpacity>
           </View>
         </ScrollView>
-      </View>
+      </SafeAreaView>
     </Modal>
   );
 }
 
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.dark },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, paddingTop: 56, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.08)' },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, paddingTop: 16, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.08)' },
   title: { color: colors.white, fontSize: 20, fontWeight: '800' },
   body: { padding: 20, gap: 16, paddingBottom: 40 },
   label: { color: colors.muted, fontSize: 11, fontWeight: '700', letterSpacing: 0.8 },

@@ -2,11 +2,11 @@
   "expo": {
     "name": "CineSage",
     "slug": "cinesage",
+    "scheme": "cinesage",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
-    "newArchEnabled": false,
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -26,7 +26,13 @@
       "package": "com.cinesage.app"
     },
     "plugins": [
-      "expo-font"
+      "expo-font",
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "CineSage needs access to your contacts to find friends who are already using the app."
+        }
+      ]
     ],
     "extra": {
       "eas": {

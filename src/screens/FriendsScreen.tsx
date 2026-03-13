@@ -5,12 +5,16 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import * as Contacts from 'expo-contacts';
 import { colors } from '../theme/colors';
+import { getGenreColor } from '../theme/genreColors';
 import { useAuth } from '../contexts/AuthContext';
 import {
   getFriendRequests, acceptFriendRequest, rejectFriendRequest,
   getFriends, getUserProfile, searchUserByUsername, sendFriendRequest,
   areFriends, hasPendingRequest, getUserStats, getMovieList,
+  findUsersByEmails,
   type FriendRequest, type UserProfile, type MovieActivity,
 } from '../lib/firestore';
 
@@ -35,6 +39,12 @@ export default function FriendsScreen() {
   const [friendWatchlist, setFriendWatchlist] = useState<MovieActivity[]>([]);
   const [profileLoading, setProfileLoading] = useState(false);
   const [friendTab, setFriendTab] = useState<'watched' | 'watchlist' | 'favorites'>('watched');
+
+  // Suggested friends state
+  const [suggestedVisible, setSuggestedVisible] = useState(false);
+  const [suggestedUsers, setSuggestedUsers] = useState<(UserProfile & { _status: 'add' | 'pending' | 'friend' })[]>([]);
+  const [suggestedLoading, setSuggestedLoading] = useState(false);
+  const [sendingTo, setSendingTo] = useState<string | null>(null);
 
   const openFriendProfile = async (friend: any) => {
     setSelectedFriend(friend);
@@ -66,6 +76,52 @@ export default function FriendsScreen() {
   };
 
   useEffect(() => { loadData(); }, [user?.uid]);
+
+  const handleSuggestedFriends = async () => {
+    if (!user?.uid) return;
+    const { status } = await Contacts.requestPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission Denied', 'We need contacts access to find your friends.');
+      return;
+    }
+    setSuggestedVisible(true);
+    setSuggestedLoading(true);
+    setSuggestedUsers([]);
+    try {
+      const { data } = await Contacts.getContactsAsync({ fields: [Contacts.Fields.Emails] });
+      const emails = new Set<string>();
+      data.forEach(c => {
+        c.emails?.forEach(e => { if (e.email) emails.add(e.email.toLowerCase()); });
+      });
+      emails.delete((user.email || '').toLowerCase());
+
+      const found = await findUsersByEmails([...emails], user.uid);
+
+      const friendIds = await getFriends(user.uid);
+      const friendSet = new Set(friendIds);
+
+      const withStatus = await Promise.all(found.map(async (u) => {
+        if (friendSet.has(u.uid)) return { ...u, _status: 'friend' as const };
+        const pending = await hasPendingRequest(user.uid, u.uid);
+        return { ...u, _status: pending ? 'pending' as const : 'add' as const };
+      }));
+
+      setSuggestedUsers(withStatus);
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Failed to load suggestions.');
+    } finally { setSuggestedLoading(false); }
+  };
+
+  const handleSuggestedAdd = async (target: UserProfile) => {
+    if (!user?.uid) return;
+    setSendingTo(target.uid);
+    try {
+      await sendFriendRequest(user.uid, profile?.displayName || 'User', target.uid);
+      setSuggestedUsers(prev => prev.map(u => u.uid === target.uid ? { ...u, _status: 'pending' } : u));
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Failed to send request.');
+    } finally { setSendingTo(null); }
+  };
 
   const handleAccept = async (req: FriendRequest) => {
     await acceptFriendRequest(user!.uid, req.id, req.fromUserId);
@@ -167,6 +223,13 @@ export default function FriendsScreen() {
         )}
       </View>
 
+      {/* Suggested Friends */}
+      <TouchableOpacity style={s.suggestedBtn} onPress={handleSuggestedFriends} activeOpacity={0.7}>
+        <Ionicons name="people-circle-outline" size={18} color={colors.red} />
+        <Text style={s.suggestedBtnText}>Suggested Friends</Text>
+        <Ionicons name="chevron-forward" size={14} color={colors.subtle} />
+      </TouchableOpacity>
+
       {/* Tabs */}
       <View style={s.tabRow}>
         {tabs.map(t => (
@@ -233,9 +296,63 @@ export default function FriendsScreen() {
           }}
         />
       )}
+      {/* Suggested Friends Modal */}
+      <Modal visible={suggestedVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setSuggestedVisible(false)}>
+        <SafeAreaView style={s.modalContainer} edges={['top', 'bottom']}>
+          <View style={s.modalHeader}>
+            <TouchableOpacity onPress={() => setSuggestedVisible(false)}>
+              <Ionicons name="close" size={24} color={colors.text} />
+            </TouchableOpacity>
+            <Text style={s.modalTitle}>Suggested Friends</Text>
+            <View style={{ width: 24 }} />
+          </View>
+          {suggestedLoading ? (
+            <ActivityIndicator color={colors.red} style={{ marginTop: 60 }} />
+          ) : suggestedUsers.length === 0 ? (
+            <View style={s.empty}>
+              <Ionicons name="people-outline" size={40} color="rgba(255,255,255,0.1)" />
+              <Text style={s.emptyText}>No matches found</Text>
+              <Text style={s.emptySub}>None of your contacts are on CineSage yet.</Text>
+            </View>
+          ) : (
+            <FlatList
+              data={suggestedUsers}
+              keyExtractor={item => item.uid}
+              contentContainerStyle={{ padding: 16 }}
+              renderItem={({ item }) => (
+                <View style={s.friendCard}>
+                  <View style={s.avatar}>
+                    {item.photoURL?.startsWith('http')
+                      ? <Image source={{ uri: item.photoURL }} style={{ width: '100%', height: '100%', borderRadius: 12 }} />
+                      : item.photoURL && !item.photoURL.startsWith('http')
+                        ? <Text style={{ fontSize: 22 }}>{item.photoURL}</Text>
+                        : <Text style={s.avatarText}>{(item.displayName || '?').charAt(0).toUpperCase()}</Text>}
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.name}>{item.displayName || 'User'}</Text>
+                    <Text style={s.sub}>From your contacts</Text>
+                  </View>
+                  {item._status === 'friend' ? (
+                    <View style={s.friendBadge}><Ionicons name="checkmark" size={13} color="#4ade80" /><Text style={s.friendBadgeText}>Friends</Text></View>
+                  ) : item._status === 'pending' ? (
+                    <View style={s.pendingBadge}><Text style={s.pendingText}>Sent ✓</Text></View>
+                  ) : (
+                    <TouchableOpacity style={s.addBtn} onPress={() => handleSuggestedAdd(item)} disabled={sendingTo === item.uid}>
+                      {sendingTo === item.uid
+                        ? <ActivityIndicator color={colors.white} size="small" />
+                        : <><Ionicons name="person-add" size={13} color={colors.white} /><Text style={s.addBtnText}>Add</Text></>}
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )}
+            />
+          )}
+        </SafeAreaView>
+      </Modal>
+
       {/* Friend Profile Modal */}
       <Modal visible={!!selectedFriend} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setSelectedFriend(null)}>
-        <View style={s.modalContainer}>
+        <SafeAreaView style={s.modalContainer} edges={['top', 'bottom']}>
           <View style={s.modalHeader}>
             <TouchableOpacity onPress={() => setSelectedFriend(null)}>
               <Ionicons name="close" size={24} color={colors.text} />
@@ -281,9 +398,10 @@ export default function FriendsScreen() {
                     <View style={s.genreSection}>
                       <Text style={s.sectionLabel}>TOP GENRES</Text>
                       <View style={s.genreRow}>
-                        {friendStats.topGenres.map((g: string, i: number) => (
-                          <View key={i} style={s.genrePill}><Text style={s.genreText}>{g}</Text></View>
-                        ))}
+                        {friendStats.topGenres.map((g: string, i: number) => {
+                          const c = getGenreColor(g);
+                          return <View key={i} style={[s.genrePill, { backgroundColor: c.bg, borderColor: c.border }]}><Text style={[s.genreText, { color: c.text }]}>{g}</Text></View>;
+                        })}
                       </View>
                     </View>
                   )}
@@ -328,7 +446,7 @@ export default function FriendsScreen() {
               )}
             </ScrollView>
           )}
-        </View>
+        </SafeAreaView>
       </Modal>
     </View>
   );
@@ -345,6 +463,9 @@ const s = StyleSheet.create({
   input: { backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', borderRadius: 12, padding: 12, paddingLeft: 36, fontSize: 14, color: colors.text },
   searchBtn: { backgroundColor: colors.red, borderRadius: 12, paddingHorizontal: 18, justifyContent: 'center' },
   searchBtnText: { color: colors.white, fontWeight: '700', fontSize: 14 },
+  // Suggested friends
+  suggestedBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 16, marginBottom: 16, padding: 14, backgroundColor: 'rgba(229,9,20,0.06)', borderWidth: 1, borderColor: 'rgba(229,9,20,0.2)', borderRadius: 12 },
+  suggestedBtnText: { flex: 1, color: colors.text, fontSize: 14, fontWeight: '700' },
   resultCard: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 14, padding: 12, backgroundColor: 'rgba(255,255,255,0.02)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', borderRadius: 12 },
   friendBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(74,222,128,0.1)', borderWidth: 1, borderColor: 'rgba(74,222,128,0.3)', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
   friendBadgeText: { color: '#4ade80', fontSize: 12, fontWeight: '700' },

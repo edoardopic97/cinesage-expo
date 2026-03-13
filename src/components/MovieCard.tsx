@@ -3,8 +3,10 @@ import {
   View, Text, Image, TouchableOpacity, StyleSheet, Dimensions, Modal,
   ScrollView, Linking,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
+import { getGenreColor } from '../theme/genreColors';
 import type { MovieResult } from '../api/client';
 import MovieActivityButtons from './MovieActivityButtons';
 
@@ -18,6 +20,7 @@ interface Props {
 }
 
 export default function MovieCard({ movie, allMovies = [], currentIndex = 0 }: Props) {
+  const insets = useSafeAreaInsets();
   const [expanded, setExpanded] = useState(false);
   const [displayIndex, setDisplayIndex] = useState(currentIndex);
 
@@ -51,9 +54,9 @@ export default function MovieCard({ movie, allMovies = [], currentIndex = 0 }: P
         )}
       </TouchableOpacity>
 
-      <Modal visible={expanded} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setExpanded(false)}>
-        <View style={s.modal}>
-          <ScrollView bounces={false} showsVerticalScrollIndicator={false}>
+      <Modal visible={expanded} animationType="slide" onRequestClose={() => setExpanded(false)} statusBarTranslucent>
+        <View style={[s.modal, { paddingTop: insets.top }]}>
+          <ScrollView bounces={false} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}>
             {/* Poster */}
             <View style={s.modalPoster}>
               {hasPoster ? (
@@ -136,7 +139,7 @@ export default function MovieCard({ movie, allMovies = [], currentIndex = 0 }: P
               {/* Genres */}
               {genres.length > 0 && (
                 <View style={s.genreRow}>
-                  {genres.map((g, i) => <View key={i} style={s.genrePill}><Text style={s.genreText}>{g}</Text></View>)}
+                  {genres.map((g, i) => { const c = getGenreColor(g); return <View key={i} style={[s.genrePill, { backgroundColor: c.bg, borderColor: c.border }]}><Text style={[s.genreText, { color: c.text }]}>{g}</Text></View>; })}
                 </View>
               )}
 
@@ -249,7 +252,7 @@ const s = StyleSheet.create({
   modalPoster: { width: '100%', height: 400, position: 'relative' },
   modalPosterImg: { width: '100%', height: '100%', resizeMode: 'cover' },
   closeBtn: {
-    position: 'absolute', top: 50, right: 16, width: 40, height: 40, borderRadius: 20,
+    position: 'absolute', top: 12, right: 16, width: 40, height: 40, borderRadius: 20,
     backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center',
   },
   navBtn: {
@@ -264,7 +267,7 @@ const s = StyleSheet.create({
     paddingHorizontal: 10, paddingVertical: 4, borderRadius: 99,
   },
   counterText: { color: colors.muted, fontSize: 12, fontWeight: '600' },
-  info: { padding: 20, paddingBottom: 40 },
+  info: { padding: 20, paddingBottom: 60 },
   tvBadge: {
     alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 4,
     backgroundColor: 'rgba(229,9,20,0.15)', borderWidth: 1,
@@ -290,10 +293,10 @@ const s = StyleSheet.create({
   // Genres
   genreRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 14 },
   genrePill: {
-    backgroundColor: 'rgba(229,9,20,0.12)', borderWidth: 1, borderColor: 'rgba(229,9,20,0.3)',
+    borderWidth: 1,
     borderRadius: 99, paddingHorizontal: 8, paddingVertical: 3,
   },
-  genreText: { color: '#ff6b6b', fontSize: 11, fontWeight: '700', textTransform: 'uppercase' },
+  genreText: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase' },
   plot: { color: '#ccc', fontSize: 14, lineHeight: 22, marginBottom: 16 },
   detailsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 16, marginBottom: 16 },
   detailItem: { minWidth: 120 },

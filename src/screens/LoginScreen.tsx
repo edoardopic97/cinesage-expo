@@ -6,7 +6,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, sendEmailVerification } from 'firebase/auth';
 import { auth } from '../lib/firebase';
 import { setUserProfile, checkUsernameExists } from '../lib/firestore';
 import { colors } from '../theme/colors';
@@ -19,8 +20,10 @@ const FEATURES = [
 ];
 
 export default function LoginScreen() {
+  const insets = useSafeAreaInsets();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [username, setUsername] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -66,13 +69,19 @@ export default function LoginScreen() {
       if (isSignUp) {
         if (!username.trim()) { Alert.alert('Error', 'Username is required'); setLoading(false); return; }
         if (username.includes(' ')) { Alert.alert('Error', 'Username cannot contain spaces'); setLoading(false); return; }
+        if (password !== confirmPassword) { Alert.alert('Error', 'Passwords do not match'); setLoading(false); return; }
         const exists = await checkUsernameExists(username);
         if (exists) { Alert.alert('Error', 'Username already taken'); setLoading(false); return; }
         const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
         await setUserProfile(cred.user.uid, { email: email.trim(), displayName: username.trim() });
-        Alert.alert('Welcome! 🎬', 'Account created successfully');
+        await sendEmailVerification(cred.user);
+        Alert.alert('Check your email 📧', 'We sent a verification link to your email. Please verify to continue.');
       } else {
-        await signInWithEmailAndPassword(auth, email.trim(), password);
+        const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
+        if (!cred.user.emailVerified) {
+          await sendEmailVerification(cred.user);
+          Alert.alert('Verify your email', 'We sent a verification link to your email. Please verify to continue.');
+        }
       }
     } catch (err: any) {
       Alert.alert('Error', getErrorMessage(err));
@@ -82,10 +91,9 @@ export default function LoginScreen() {
   };
 
   return (
-    <KeyboardAvoidingView style={s.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+    <KeyboardAvoidingView style={[s.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <LinearGradient colors={['#0d0d0d', '#1a0505', '#0a0a0a']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
       <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
-        {/* Animated Logo */}
         <Animated.View style={{ opacity: logoOpacity, transform: [{ scale: logoScale }] }}>
           <Text style={s.logo}>Cine<Text style={s.logoAccent}>Sage</Text></Text>
           <Text style={s.tagline}>Your AI-powered movie companion</Text>
@@ -93,7 +101,6 @@ export default function LoginScreen() {
 
         <Animated.View style={{ opacity: contentOpacity, width: '100%' }}>
 
-        {/* Features */}
         <View style={s.features}>
           {FEATURES.map((f, i) => (
             <View key={i} style={s.featureRow}>
@@ -108,7 +115,6 @@ export default function LoginScreen() {
           ))}
         </View>
 
-        {/* Form */}
         <View style={s.form}>
           <Text style={s.formTitle}>{isSignUp ? 'Create account' : 'Welcome back'}</Text>
           <Text style={s.formSub}>{isSignUp ? 'Join CineSage and start discovering great films' : 'Sign in to continue your movie journey'}</Text>
@@ -164,6 +170,23 @@ export default function LoginScreen() {
             </View>
           </View>
 
+          {isSignUp && (
+            <View style={s.fieldWrap}>
+              <Text style={s.label}>CONFIRM PASSWORD</Text>
+              <View style={s.inputWrap}>
+                <Ionicons name="lock-closed-outline" size={16} color={colors.subtle} style={s.inputIcon} />
+                <TextInput
+                  style={s.input}
+                  placeholder="••••••••"
+                  placeholderTextColor={colors.subtle}
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                  secureTextEntry={!showPassword}
+                />
+              </View>
+            </View>
+          )}
+
           <TouchableOpacity style={s.btn} onPress={handleAuth} disabled={loading} activeOpacity={0.8}>
             {loading ? (
               <ActivityIndicator color={colors.white} />
@@ -175,7 +198,7 @@ export default function LoginScreen() {
             )}
           </TouchableOpacity>
 
-          <TouchableOpacity onPress={() => setIsSignUp(!isSignUp)} style={s.toggle}>
+          <TouchableOpacity onPress={() => { setIsSignUp(!isSignUp); setConfirmPassword(''); }} style={s.toggle}>
             <Text style={s.toggleText}>
               {isSignUp ? 'Already have an account? ' : "Don't have an account? "}
               <Text style={s.toggleAccent}>{isSignUp ? 'Sign in' : 'Sign up free'}</Text>
@@ -190,7 +213,7 @@ export default function LoginScreen() {
 
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.black },
-  scroll: { flexGrow: 1, justifyContent: 'center', padding: 24, paddingTop: 60 },
+  scroll: { flexGrow: 1, padding: 24, paddingBottom: 40 },
   logo: { fontSize: 42, fontWeight: '900', color: colors.white, letterSpacing: -1, textAlign: 'center' },
   logoAccent: { color: colors.red },
   tagline: { color: colors.muted, fontSize: 14, textAlign: 'center', marginTop: 6, marginBottom: 32 },

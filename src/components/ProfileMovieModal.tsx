@@ -1,7 +1,9 @@
 import React from 'react';
 import { View, Text, Image, TouchableOpacity, StyleSheet, Modal, ScrollView, Linking } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
+import { getGenreColor } from '../theme/genreColors';
 import type { MovieActivity } from '../lib/firestore';
 
 interface Props {
@@ -10,6 +12,7 @@ interface Props {
 }
 
 export default function ProfileMovieModal({ movie, onClose }: Props) {
+  const insets = useSafeAreaInsets();
   if (!movie) return null;
   const genres = movie.genres || [];
   const imdbRating = parseFloat(movie.imdbRating || '0');
@@ -17,9 +20,9 @@ export default function ProfileMovieModal({ movie, onClose }: Props) {
   const meta = movie.ratings?.find(r => r.Source === 'Metacritic')?.Value;
 
   return (
-    <Modal visible={!!movie} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <View style={s.container}>
-        <ScrollView bounces={false} showsVerticalScrollIndicator={false}>
+    <Modal visible={!!movie} animationType="slide" onRequestClose={onClose} statusBarTranslucent>
+      <View style={[s.container, { paddingTop: insets.top }]}>
+        <ScrollView bounces={false} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}>
           {/* Poster */}
           <View style={s.posterWrap}>
             {movie.poster ? <Image source={{ uri: movie.poster }} style={s.poster} /> : (
@@ -42,7 +45,7 @@ export default function ProfileMovieModal({ movie, onClose }: Props) {
                 {meta && <View style={s.scoreCard}><Text style={{ fontSize: 18 }}>🎯</Text><View><Text style={s.scoreVal}>{meta}</Text><Text style={s.scoreLbl}>Metacritic</Text></View></View>}
               </View>
             )}
-            {genres.length > 0 && <View style={s.genreRow}>{genres.map((g, i) => <View key={i} style={s.genrePill}><Text style={s.genreText}>{g}</Text></View>)}</View>}
+            {genres.length > 0 && <View style={s.genreRow}>{genres.map((g, i) => { const c = getGenreColor(g); return <View key={i} style={[s.genrePill, { backgroundColor: c.bg, borderColor: c.border }]}><Text style={[s.genreText, { color: c.text }]}>{g}</Text></View>; })}</View>}
             {movie.plot ? <Text style={s.plot}>{movie.plot}</Text> : null}
             <View style={s.detailGrid}>
               {movie.director ? <View style={s.detailItem}><Text style={s.detailLabel}>Director</Text><Text style={s.detailVal}>{movie.director.split(',')[0]}</Text></View> : null}
@@ -83,8 +86,8 @@ const s = StyleSheet.create({
   posterWrap: { width: '100%', height: 380, position: 'relative' },
   poster: { width: '100%', height: '100%', resizeMode: 'cover' },
   noPoster: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface },
-  closeBtn: { position: 'absolute', top: 50, right: 16, width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' },
-  info: { padding: 20, paddingBottom: 40 },
+  closeBtn: { position: 'absolute', top: 12, right: 16, width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' },
+  info: { padding: 20, paddingBottom: 60 },
   tvBadge: { alignSelf: 'flex-start', backgroundColor: 'rgba(229,9,20,0.15)', borderWidth: 1, borderColor: 'rgba(229,9,20,0.3)', borderRadius: 4, paddingHorizontal: 8, paddingVertical: 2, marginBottom: 8 },
   tvText: { color: colors.red, fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
   title: { color: colors.white, fontSize: 24, fontWeight: '900', lineHeight: 30, marginBottom: 10 },

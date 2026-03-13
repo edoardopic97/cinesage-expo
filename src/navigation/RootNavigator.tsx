@@ -3,6 +3,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useAuth } from '../contexts/AuthContext';
 import LoginScreen from '../screens/LoginScreen';
+import VerifyEmailScreen from '../screens/VerifyEmailScreen';
 import TabNavigator from './TabNavigator';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { colors } from '../theme/colors';
@@ -24,7 +25,11 @@ export default function RootNavigator() {
     <NavigationContainer>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {user ? (
-          <Stack.Screen name="Main" component={TabNavigator} />
+          user.emailVerified ? (
+            <Stack.Screen name="Main" component={TabNavigator} />
+          ) : (
+            <Stack.Screen name="VerifyEmail" component={VerifyEmailScreen} />
+          )
         ) : (
           <Stack.Screen name="Login" component={LoginScreen} />
         )}

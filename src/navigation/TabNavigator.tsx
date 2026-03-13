@@ -31,27 +31,28 @@ export default function TabNavigator() {
           backgroundColor: 'rgba(10,10,10,0.98)',
           borderTopColor: 'rgba(255,255,255,0.06)',
           borderTopWidth: 1,
-          height: 60 + bottomPad,
+          height: 90 + bottomPad,
           paddingBottom: bottomPad,
-          paddingTop: 10,
+          paddingTop: 14,
         },
         tabBarActiveTintColor: colors.red,
         tabBarInactiveTintColor: colors.subtle,
-        tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
+        tabBarLabelStyle: { fontSize: 14, fontWeight: '600' },
+        tabBarIconStyle: { marginBottom: 2 },
       }}
     >
       <Tab.Screen
         name="Discover"
         component={DiscoverScreen}
         options={{
-          tabBarIcon: ({ color, size }) => <Ionicons name="search" size={size} color={color} />,
+          tabBarIcon: ({ color }) => <Ionicons name="search" size={26} color={color} />,
         }}
       />
       <Tab.Screen
         name="Friends"
         component={FriendsScreen}
         options={{
-          tabBarIcon: ({ color, size }) => <Ionicons name="people" size={size} color={color} />,
+          tabBarIcon: ({ color }) => <Ionicons name="people" size={26} color={color} />,
           tabBarBadge: pendingCount > 0 ? pendingCount : undefined,
           tabBarBadgeStyle: { backgroundColor: colors.red, fontSize: 10, fontWeight: '700' },
         }}
@@ -60,7 +61,7 @@ export default function TabNavigator() {
         name="Profile"
         component={ProfileScreen}
         options={{
-          tabBarIcon: ({ color, size }) => <Ionicons name="person" size={size} color={color} />,
+          tabBarIcon: ({ color }) => <Ionicons name="person" size={26} color={color} />,
         }}
       />
     </Tab.Navigator>

@@ -257,16 +257,42 @@ export interface AppNotification {
   createdAt: Timestamp;
 }
 
-export async function getNotifications(userId: string): Promise<AppNotification[]> {
-  const q = query(collection(db, 'users', userId, 'notifications'), where('read', 'in', [true, false]));
+export function subscribeToNotifications(userId: string, callback: (notifs: AppNotification[]) => void): Unsubscribe {
+  const q = query(collection(db, 'users', userId, 'notifications'));
+  return onSnapshot(q, (snap) => {
+    const notifs = snap.docs.map(d => ({ id: d.id, ...d.data() } as AppNotification)).sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+    callback(notifs);
+  });
+}
+
+export async function markNotificationsRead(userId: string): Promise<void> {
+  const q = query(collection(db, 'users', userId, 'notifications'), where('read', '==', false));
   const snap = await getDocs(q);
-  return snap.docs.map(d => ({ id: d.id, ...d.data() } as AppNotification)).sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+  const updates = snap.docs.map(d => updateDoc(d.ref, { read: true }));
+  await Promise.all(updates);
 }
 
 export async function addNotification(userId: string, type: AppNotification['type'], message: string): Promise<void> {
   const ref = doc(collection(db, 'users', userId, 'notifications'));
   await setDoc(ref, { id: ref.id, type, message, read: false, createdAt: Timestamp.now() });
 }
+
+export async function findUsersByEmails(emails: string[], excludeUid: string): Promise<UserProfile[]> {
+  if (!emails.length) return [];
+  const results: UserProfile[] = [];
+  for (let i = 0; i < emails.length; i += 30) {
+    const batch = emails.slice(i, i + 30);
+    const q = query(collection(db, 'users'), where('email', 'in', batch));
+    const snap = await getDocs(q);
+    snap.forEach(d => {
+      const u = d.data() as UserProfile;
+      if (u.uid !== excludeUid) results.push(u);
+    });
+  }
+  return results;
+}
+
+
 
 export async function getUserStats(userId: string) {
   const snap = await getDocs(collection(db, 'users', userId, 'movies'));
