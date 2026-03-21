@@ -1,13 +1,14 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { onAuthStateChanged, signOut, type User } from 'firebase/auth';
+import { onAuthStateChanged, signOut, deleteUser, type User } from 'firebase/auth';
 import { auth } from '../lib/firebase';
-import { getUserProfile, setUserProfile } from '../lib/firestore';
+import { getUserProfile, setUserProfile, deleteUserData } from '../lib/firestore';
 
 interface AuthContextType {
   user: User | null;
   profile: any;
   loading: boolean;
   logout: () => Promise<void>;
+  deleteAccount: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   refreshUser: () => Promise<void>;
 }
@@ -17,6 +18,7 @@ const AuthContext = createContext<AuthContextType>({
   profile: null,
   loading: true,
   logout: async () => {},
+  deleteAccount: async () => {},
   refreshProfile: async () => {},
   refreshUser: async () => {},
 });
@@ -71,8 +73,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setProfile(null);
   };
 
+  const deleteAccount = async () => {
+    if (!auth.currentUser) return;
+    const uid = auth.currentUser.uid;
+    await deleteUserData(uid);
+    await deleteUser(auth.currentUser);
+    setProfile(null);
+  };
+
   return (
-    <AuthContext.Provider value={{ user, profile, loading, logout, refreshProfile, refreshUser }}>
+    <AuthContext.Provider value={{ user, profile, loading, logout, deleteAccount, refreshProfile, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

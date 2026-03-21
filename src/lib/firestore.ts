@@ -90,8 +90,15 @@ export async function getFriendRequests(userId: string): Promise<FriendRequest[]
   return snap.docs.map(d => d.data() as FriendRequest);
 }
 
+export function subscribeToFriendRequests(userId: string, callback: (reqs: FriendRequest[]) => void): Unsubscribe {
+  const q = query(collection(db, 'users', userId, 'friendRequests'), where('status', '==', 'pending'));
+  return onSnapshot(q, (snap) => {
+    callback(snap.docs.map(d => d.data() as FriendRequest));
+  });
+}
+
 export async function acceptFriendRequest(userId: string, requestId: string, fromUserId: string): Promise<void> {
-  await updateDoc(doc(db, 'users', userId, 'friendRequests', requestId), { status: 'accepted' });
+  await deleteDoc(doc(db, 'users', userId, 'friendRequests', requestId));
   await setDoc(doc(db, 'users', userId, 'friends', fromUserId), { userId: fromUserId, addedAt: Timestamp.now() });
   await setDoc(doc(db, 'users', fromUserId, 'friends', userId), { userId, addedAt: Timestamp.now() });
   const profile = await getDoc(doc(db, 'users', userId));
@@ -100,7 +107,7 @@ export async function acceptFriendRequest(userId: string, requestId: string, fro
 }
 
 export async function rejectFriendRequest(userId: string, requestId: string): Promise<void> {
-  await updateDoc(doc(db, 'users', userId, 'friendRequests', requestId), { status: 'rejected' });
+  await deleteDoc(doc(db, 'users', userId, 'friendRequests', requestId));
 }
 
 export async function getFriends(userId: string): Promise<string[]> {
@@ -178,7 +185,12 @@ export async function setMovieActivity(userId: string, movieId: string, activity
 
 export async function rateMovie(userId: string, movieId: string, rating: number): Promise<void> {
   const ref = doc(db, 'users', userId, 'movies', movieId);
-  await updateDoc(ref, { rating, updatedAt: Timestamp.now() });
+  const snap = await getDoc(ref);
+  if (snap.exists()) {
+    await updateDoc(ref, { rating, updatedAt: Timestamp.now() });
+  } else {
+    await setDoc(ref, { movieId, rating, watched: false, toWatch: false, favorite: false, addedAt: Timestamp.now(), updatedAt: Timestamp.now() }, { merge: true });
+  }
 }
 
 export async function removeMovieFromWatched(userId: string, movieId: string): Promise<void> {
@@ -293,6 +305,33 @@ export async function findUsersByEmails(emails: string[], excludeUid: string): P
 }
 
 
+
+export async function incrementSearchCount(userId: string): Promise<void> {
+  const ref = doc(db, 'users', userId);
+  const snap = await getDoc(ref);
+  const current = snap.exists() ? (snap.data().totalSearches || 0) : 0;
+  await setDoc(ref, { totalSearches: current + 1, updatedAt: Timestamp.now() }, { merge: true });
+}
+
+export async function getSearchCount(userId: string): Promise<number> {
+  const snap = await getDoc(doc(db, 'users', userId));
+  return snap.exists() ? (snap.data().totalSearches || 0) : 0;
+}
+
+export async function deleteUserData(userId: string): Promise<void> {
+  const subs = ['movies', 'friends', 'friendRequests', 'notifications'];
+  for (const sub of subs) {
+    const snap = await getDocs(collection(db, 'users', userId, sub));
+    await Promise.all(snap.docs.map(d => deleteDoc(d.ref)));
+  }
+  // Remove username mapping
+  const profile = await getDoc(doc(db, 'users', userId));
+  if (profile.exists()) {
+    const name = profile.data().displayName;
+    if (name) await deleteDoc(doc(db, 'usernames', name.toLowerCase().trim())).catch(() => {});
+  }
+  await deleteDoc(doc(db, 'users', userId));
+}
 
 export async function getUserStats(userId: string) {
   const snap = await getDocs(collection(db, 'users', userId, 'movies'));

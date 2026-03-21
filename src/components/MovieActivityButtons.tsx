@@ -42,6 +42,11 @@ export default function MovieActivityButtons({ movie, compact = false }: Props) 
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    setWatched(false);
+    setToWatch(false);
+    setFavorite(false);
+    setRating(0);
+    setShowRating(false);
     if (!user?.uid) return;
     getMovieActivity(user.uid, movie.movieId).then(a => {
       if (a) { setWatched(a.watched); setToWatch(a.toWatch); setFavorite(a.favorite); setRating(a.rating || 0); }

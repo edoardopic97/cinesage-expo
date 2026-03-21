@@ -79,8 +79,7 @@ export default function LoginScreen() {
       } else {
         const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
         if (!cred.user.emailVerified) {
-          await sendEmailVerification(cred.user);
-          Alert.alert('Verify your email', 'We sent a verification link to your email. Please verify to continue.');
+          Alert.alert('Verify your email', 'Please check your inbox for the verification link we sent when you signed up.');
         }
       }
     } catch (err: any) {

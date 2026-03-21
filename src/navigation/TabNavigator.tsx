@@ -7,7 +7,7 @@ import DiscoverScreen from '../screens/DiscoverScreen';
 import FriendsScreen from '../screens/FriendsScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import { useAuth } from '../contexts/AuthContext';
-import { getFriendRequests } from '../lib/firestore';
+import { subscribeToFriendRequests } from '../lib/firestore';
 
 const Tab = createBottomTabNavigator();
 
@@ -18,7 +18,8 @@ export default function TabNavigator() {
 
   useEffect(() => {
     if (!user?.uid) return;
-    getFriendRequests(user.uid).then(r => setPendingCount(r.length)).catch(() => {});
+    const unsub = subscribeToFriendRequests(user.uid, (reqs) => setPendingCount(reqs.length));
+    return () => unsub();
   }, [user?.uid]);
 
   const bottomPad = Math.max(insets.bottom, 16);

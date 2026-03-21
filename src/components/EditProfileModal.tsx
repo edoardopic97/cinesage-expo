@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Modal, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Modal, ScrollView, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
@@ -15,7 +15,7 @@ interface Props {
 }
 
 export default function EditProfileModal({ visible, onClose, onSaved }: Props) {
-  const { user, profile, refreshProfile } = useAuth();
+  const { user, profile, refreshProfile, deleteAccount } = useAuth();
   const [displayName, setDisplayName] = useState(profile?.displayName || '');
   const [avatar, setAvatar] = useState(profile?.photoURL || AVATARS[0]);
   const [showAvatars, setShowAvatars] = useState(false);
@@ -66,6 +66,20 @@ export default function EditProfileModal({ visible, onClose, onSaved }: Props) {
               {saving ? <ActivityIndicator color="#fff" size="small" /> : <Text style={s.saveText}>Save Changes</Text>}
             </TouchableOpacity>
           </View>
+
+          <TouchableOpacity style={s.deleteBtn} onPress={() => Alert.alert(
+            'Delete Account',
+            'This will permanently delete your account and all your data. This cannot be undone.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Delete', style: 'destructive', onPress: () => deleteAccount().catch(() =>
+                Alert.alert('Error', 'Failed to delete account. You may need to sign in again before deleting.')
+              )},
+            ],
+          )}>
+            <Ionicons name="trash-outline" size={16} color="#ff3b30" />
+            <Text style={s.deleteBtnText}>Delete Account</Text>
+          </TouchableOpacity>
         </ScrollView>
       </SafeAreaView>
     </Modal>
@@ -91,4 +105,6 @@ const s = StyleSheet.create({
   cancelText: { color: colors.muted, fontSize: 15, fontWeight: '600' },
   saveBtn: { flex: 1, backgroundColor: colors.red, borderRadius: 8, padding: 14, alignItems: 'center' },
   saveText: { color: colors.white, fontSize: 15, fontWeight: '700' },
+  deleteBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: 'rgba(255,59,48,0.1)', borderWidth: 1, borderColor: 'rgba(255,59,48,0.3)', borderRadius: 10, paddingVertical: 14, marginTop: 24 },
+  deleteBtnText: { color: '#ff3b30', fontSize: 14, fontWeight: '700' },
 });

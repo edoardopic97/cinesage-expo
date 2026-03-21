@@ -1,18 +1,22 @@
-import React from 'react';
-import { View, Text, Image, TouchableOpacity, StyleSheet, Modal, ScrollView, Linking } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, Image, TouchableOpacity, StyleSheet, Modal, ScrollView, Linking, Share, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 import { getGenreColor } from '../theme/genreColors';
-import type { MovieActivity } from '../lib/firestore';
+import { useAuth } from '../contexts/AuthContext';
+import { removeMovieFromWatched, removeMovieFromToWatch, removeMovieFromFavorites, setMovieActivity, type MovieActivity } from '../lib/firestore';
 
 interface Props {
   movie: MovieActivity | null;
   onClose: () => void;
+  readOnly?: boolean;
 }
 
-export default function ProfileMovieModal({ movie, onClose }: Props) {
+export default function ProfileMovieModal({ movie, onClose, readOnly = false }: Props) {
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
+  const [removing, setRemoving] = useState(false);
   if (!movie) return null;
   const genres = movie.genres || [];
   const imdbRating = parseFloat(movie.imdbRating || '0');
@@ -32,7 +36,17 @@ export default function ProfileMovieModal({ movie, onClose }: Props) {
           </View>
           <View style={s.info}>
             {movie.type === 'series' && <View style={s.tvBadge}><Text style={s.tvText}>TV SERIES</Text></View>}
-            <Text style={s.title}>{movie.title}</Text>
+            <View style={s.titleRow}>
+              <Text style={[s.title, { flex: 1 }]}>{movie.title}</Text>
+              <TouchableOpacity style={s.shareBtn} onPress={() => {
+                const url = movie.movieId?.startsWith('tt') ? `https://cinesage-api.vercel.app/movie/${movie.movieId}` : '';
+                const lines = [`🎬 ${movie.title}${movie.year ? ` (${movie.year})` : ''}`];
+                if (imdbRating > 0) lines.push(`⭐ ${imdbRating.toFixed(1)} IMDb`);
+                if (genres.length) lines.push(genres.join(', '));
+                if (url) lines.push(`\n${url}`);
+                Share.share({ message: lines.join('\n') });
+              }}><Ionicons name="share-outline" size={18} color={colors.white} /></TouchableOpacity>
+            </View>
             <View style={s.metaRow}>
               {movie.year ? <Text style={s.meta}>{movie.year}</Text> : null}
               {imdbRating > 0 && <View style={s.metaItem}><Ionicons name="star" size={13} color={colors.gold} /><Text style={s.metaGold}>{imdbRating.toFixed(1)} IMDb</Text></View>}
@@ -74,6 +88,61 @@ export default function ProfileMovieModal({ movie, onClose }: Props) {
                 <Ionicons name="open-outline" size={14} color={colors.gold} /><Text style={s.imdbText}>View on IMDb</Text>
               </TouchableOpacity>
             )}
+
+            {!readOnly && user?.uid && (movie.watched || movie.toWatch || movie.favorite) && (
+              <View style={s.removeSection}>
+                {movie.toWatch && !movie.watched && (
+                  <>
+                    <Text style={s.detailLabel}>Actions</Text>
+                    <TouchableOpacity style={s.watchedBtn} disabled={removing} onPress={async () => {
+                      setRemoving(true);
+                      await setMovieActivity(user.uid, movie.movieId, { ...movie, watched: true, toWatch: false }).catch(() => {});
+                      setRemoving(false);
+                      onClose();
+                    }}>
+                      <Ionicons name="eye" size={16} color="#fff" />
+                      <Text style={s.watchedBtnText}>Mark as Watched</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
+                <Text style={[s.detailLabel, movie.toWatch && !movie.watched && { marginTop: 16 }]}>Remove From</Text>
+                <View style={s.removeRow}>
+                  {movie.watched && (
+                    <TouchableOpacity style={s.removeBtn} disabled={removing} onPress={() => {
+                      Alert.alert('Remove', 'Remove from Watched?', [
+                        { text: 'Cancel', style: 'cancel' },
+                        { text: 'Remove', style: 'destructive', onPress: async () => { setRemoving(true); await removeMovieFromWatched(user.uid, movie.movieId).catch(() => {}); setRemoving(false); onClose(); }},
+                      ]);
+                    }}>
+                      <Ionicons name="eye-off-outline" size={14} color={colors.red} />
+                      <Text style={s.removeBtnText}>Watched</Text>
+                    </TouchableOpacity>
+                  )}
+                  {movie.toWatch && (
+                    <TouchableOpacity style={s.removeBtn} disabled={removing} onPress={() => {
+                      Alert.alert('Remove', 'Remove from Watchlist?', [
+                        { text: 'Cancel', style: 'cancel' },
+                        { text: 'Remove', style: 'destructive', onPress: async () => { setRemoving(true); await removeMovieFromToWatch(user.uid, movie.movieId).catch(() => {}); setRemoving(false); onClose(); }},
+                      ]);
+                    }}>
+                      <Ionicons name="bookmark-outline" size={14} color={colors.red} />
+                      <Text style={s.removeBtnText}>Watchlist</Text>
+                    </TouchableOpacity>
+                  )}
+                  {movie.favorite && (
+                    <TouchableOpacity style={s.removeBtn} disabled={removing} onPress={() => {
+                      Alert.alert('Remove', 'Remove from Favorites?', [
+                        { text: 'Cancel', style: 'cancel' },
+                        { text: 'Remove', style: 'destructive', onPress: async () => { setRemoving(true); await removeMovieFromFavorites(user.uid, movie.movieId).catch(() => {}); setRemoving(false); onClose(); }},
+                      ]);
+                    }}>
+                      <Ionicons name="heart-dislike-outline" size={14} color={colors.red} />
+                      <Text style={s.removeBtnText}>Favorites</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+            )}
           </View>
         </ScrollView>
       </View>
@@ -87,6 +156,8 @@ const s = StyleSheet.create({
   poster: { width: '100%', height: '100%', resizeMode: 'cover' },
   noPoster: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface },
   closeBtn: { position: 'absolute', top: 12, right: 16, width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' },
+  titleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  shareBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center', marginTop: 2 },
   info: { padding: 20, paddingBottom: 60 },
   tvBadge: { alignSelf: 'flex-start', backgroundColor: 'rgba(229,9,20,0.15)', borderWidth: 1, borderColor: 'rgba(229,9,20,0.3)', borderRadius: 4, paddingHorizontal: 8, paddingVertical: 2, marginBottom: 8 },
   tvText: { color: colors.red, fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
@@ -117,4 +188,10 @@ const s = StyleSheet.create({
   yourRating: { borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.07)', paddingTop: 12, marginBottom: 12 },
   imdbLink: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 },
   imdbText: { color: colors.gold, fontSize: 13, fontWeight: '600' },
+  removeSection: { borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.07)', paddingTop: 16, marginTop: 16 },
+  removeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
+  removeBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,59,48,0.1)', borderWidth: 1, borderColor: 'rgba(255,59,48,0.3)', borderRadius: 8, paddingHorizontal: 14, paddingVertical: 10 },
+  removeBtnText: { color: '#ff3b30', fontSize: 13, fontWeight: '700' },
+  watchedBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: colors.red, borderRadius: 10, paddingVertical: 12, marginBottom: 4 },
+  watchedBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
 });

@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE = 'https://cine-sage-app.vercel.app';
+const API_BASE = 'https://cinesage-api.vercel.app';
 
 const api = axios.create({
   baseURL: API_BASE,
@@ -38,11 +38,16 @@ export interface SearchResponse {
 
 export async function searchMovies(
   query: string,
-  category: 'movie' | 'tv' | 'all' = 'all'
+  category: 'movie' | 'tv' | 'all' = 'all',
+  uid?: string,
+  exclude?: string[]
 ): Promise<SearchResponse> {
-  // tRPC mutation expects the input wrapped in a specific format
+  let enrichedQuery = query;
+  if (exclude?.length) {
+    enrichedQuery += `. Do NOT include any of these titles I already have: ${exclude.join(', ')}`;
+  }
   const res = await api.post('/api/trpc/movies.search', {
-    json: { query, category },
+    json: { query: enrichedQuery, category, uid: uid || null },
   });
 
   // tRPC batch response: [{result:{data:{json:{...}}}}]

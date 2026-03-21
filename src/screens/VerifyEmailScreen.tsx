@@ -13,12 +13,7 @@ export default function VerifyEmailScreen() {
   const [sending, setSending] = useState(false);
   const [checking, setChecking] = useState(false);
 
-  // Auto-send verification email on mount
-  useEffect(() => {
-    if (auth.currentUser && !auth.currentUser.emailVerified) {
-      sendEmailVerification(auth.currentUser).catch(() => {});
-    }
-  }, []);
+
 
   const handleResend = async () => {
     if (!auth.currentUser) return;

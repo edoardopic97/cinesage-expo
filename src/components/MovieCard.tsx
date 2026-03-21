@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, Image, TouchableOpacity, StyleSheet, Dimensions, Modal,
-  ScrollView, Linking,
+  ScrollView, Linking, Share,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -90,7 +90,20 @@ export default function MovieCard({ movie, allMovies = [], currentIndex = 0 }: P
                   <Text style={s.tvBadgeText}>TV SERIES</Text>
                 </View>
               )}
-              <Text style={s.title}>{current.Title}</Text>
+              <View style={s.titleRow}>
+                <Text style={[s.title, { flex: 1 }]}>{current.Title}</Text>
+                <TouchableOpacity style={s.shareBtn} onPress={() => {
+                  const r = parseFloat(current.imdbRating || '0');
+                  const url = current.imdbID ? `https://cinesage-api.vercel.app/movie/${current.imdbID}` : '';
+                  const lines = [`🎬 ${current.Title}${current.Year ? ` (${current.Year})` : ''}`];
+                  if (r > 0) lines.push(`⭐ ${r.toFixed(1)} IMDb`);
+                  if (current.Genre && current.Genre !== 'N/A') lines.push(current.Genre);
+                  if (url) lines.push(`\n${url}`);
+                  Share.share({ message: lines.join('\n') });
+                }}>
+                  <Ionicons name="share-outline" size={18} color={colors.white} />
+                </TouchableOpacity>
+              </View>
 
               {/* Meta row */}
               <View style={s.metaRow}>
@@ -254,6 +267,12 @@ const s = StyleSheet.create({
   closeBtn: {
     position: 'absolute', top: 12, right: 16, width: 40, height: 40, borderRadius: 20,
     backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center',
+  },
+  titleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  shareBtn: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)',
+    alignItems: 'center', justifyContent: 'center', marginTop: 2,
   },
   navBtn: {
     position: 'absolute', top: '45%', width: 40, height: 40, borderRadius: 20,

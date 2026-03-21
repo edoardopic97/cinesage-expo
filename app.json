@@ -23,7 +23,17 @@
         "monochromeImage": "./assets/android-icon-monochrome.png",
         "backgroundColor": "#0a0a0a"
       },
-      "package": "com.cinesage.app"
+      "package": "com.cinesage.app",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            { "scheme": "https", "host": "cinesage-api.vercel.app", "pathPrefix": "/movie" }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
     },
     "plugins": [
       "expo-font",

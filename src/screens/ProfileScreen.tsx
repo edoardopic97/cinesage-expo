@@ -9,10 +9,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '../theme/colors';
 import { getGenreColor } from '../theme/genreColors';
 import { useAuth } from '../contexts/AuthContext';
-import { subscribeToMovieList, getUserStats, type MovieActivity } from '../lib/firestore';
+import { subscribeToMovieList, getUserStats, getSearchCount, getFriends, type MovieActivity } from '../lib/firestore';
 import { sortMovies, filterByGenre, searchByTitle, getUniqueGenres } from '../lib/movieUtils';
 import EditProfileModal from '../components/EditProfileModal';
 import ProfileMovieModal from '../components/ProfileMovieModal';
+import ProfileRing, { getTier, getNextTier, TIER_META } from '../components/ProfileRing';
 
 const { width: SW } = Dimensions.get('window');
 const GRID_COLS = 3;
@@ -35,8 +36,18 @@ export default function ProfileScreen() {
   const [genre, setGenre] = useState('all');
   const [search, setSearch] = useState('');
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
+  const [wlSort, setWlSort] = useState<Sort>('date');
+  const [wlGenre, setWlGenre] = useState('all');
+  const [wlSearch, setWlSearch] = useState('');
+  const [wlViewMode, setWlViewMode] = useState<ViewMode>('grid');
+  const [favSort, setFavSort] = useState<Sort>('date');
+  const [favGenre, setFavGenre] = useState('all');
+  const [favSearch, setFavSearch] = useState('');
+  const [favViewMode, setFavViewMode] = useState<ViewMode>('grid');
   const [editVisible, setEditVisible] = useState(false);
   const [selectedMovie, setSelectedMovie] = useState<MovieActivity | null>(null);
+  const [searchCount, setSearchCount] = useState(0);
+  const [friendsCount, setFriendsCount] = useState(0);
 
   useEffect(() => {
     if (!user?.uid) return;
@@ -44,6 +55,8 @@ export default function ProfileScreen() {
     const u2 = subscribeToMovieList(user.uid, 'toWatch', setToWatch);
     const u3 = subscribeToMovieList(user.uid, 'favorite', setFavs);
     getUserStats(user.uid).then(setStats).catch(() => {});
+    getSearchCount(user.uid).then(setSearchCount).catch(() => {});
+    getFriends(user.uid).then(f => setFriendsCount(f.length)).catch(() => {});
     return () => { u1(); u2(); u3(); };
   }, [user?.uid]);
 
@@ -61,11 +74,47 @@ export default function ProfileScreen() {
   }, [watched, search, genre, sort]);
 
   const genres = useMemo(() => getUniqueGenres(watched), [watched]);
+
+  const filteredWl = useMemo(() => {
+    let m = toWatch;
+    if (wlSearch) m = searchByTitle(m, wlSearch);
+    if (wlGenre !== 'all') m = filterByGenre(m, wlGenre);
+    return sortMovies(m, wlSort);
+  }, [toWatch, wlSearch, wlGenre, wlSort]);
+  const wlGenres = useMemo(() => getUniqueGenres(toWatch), [toWatch]);
+
+  const filteredFav = useMemo(() => {
+    let m = favs;
+    if (favSearch) m = searchByTitle(m, favSearch);
+    if (favGenre !== 'all') m = filterByGenre(m, favGenre);
+    return sortMovies(m, favSort);
+  }, [favs, favSearch, favGenre, favSort]);
+  const favGenres = useMemo(() => getUniqueGenres(favs), [favs]);
+
+  const topGenresByList = useMemo(() => {
+    const map: Record<string, { watched: number; watchlist: number; favorites: number }> = {};
+    const count = (list: MovieActivity[], key: 'watched' | 'watchlist' | 'favorites') => {
+      list.forEach(m => (m.genres || []).forEach(g => {
+        if (!map[g]) map[g] = { watched: 0, watchlist: 0, favorites: 0 };
+        map[g][key]++;
+      }));
+    };
+    count(watched, 'watched');
+    count(toWatch, 'watchlist');
+    count(favs, 'favorites');
+    return Object.entries(map)
+      .map(([g, c]) => ({ genre: g, ...c, total: c.watched + c.watchlist + c.favorites }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 5);
+  }, [watched, toWatch, favs]);
   const avgRating = useMemo(() => {
-    const rated = watched.filter(m => m.rating && m.rating > 0);
+    const allMovies = [...watched, ...toWatch, ...favs];
+    const seen = new Set<string>();
+    const unique = allMovies.filter(m => { if (seen.has(m.movieId)) return false; seen.add(m.movieId); return true; });
+    const rated = unique.filter(m => m.rating && m.rating > 0);
     if (!rated.length) return '—';
     return (rated.reduce((s, m) => s + (m.rating || 0), 0) / rated.length).toFixed(1);
-  }, [watched]);
+  }, [watched, toWatch, favs]);
 
   const displayName = profile?.displayName || user?.email?.split('@')[0] || 'User';
   const initials = displayName.charAt(0).toUpperCase();
@@ -114,14 +163,52 @@ export default function ProfileScreen() {
     </TouchableOpacity>
   );
 
+  const renderFilterBar = (opts: {
+    search: string; setSearch: (v: string) => void;
+    sort: Sort; setSort: (v: Sort) => void;
+    genre: string; setGenre: (v: string) => void;
+    viewMode: ViewMode; setViewMode: (v: ViewMode) => void;
+    genres: string[]; count: number; placeholder: string;
+  }) => (
+    <>
+      <View style={s.filterBar}>
+        <View style={s.searchWrap}>
+          <Ionicons name="search" size={14} color={colors.subtle} style={{ position: 'absolute', left: 10, top: 10, zIndex: 1 }} />
+          <TextInput style={s.searchInput} placeholder={opts.placeholder} placeholderTextColor={colors.subtle} value={opts.search} onChangeText={opts.setSearch} />
+        </View>
+        <View style={s.filterActions}>
+          <TouchableOpacity style={s.sortBtn} onPress={() => opts.setSort(opts.sort === 'date' ? 'rating' : opts.sort === 'rating' ? 'title' : 'date')}>
+            <Ionicons name={opts.sort === 'date' ? 'time-outline' : opts.sort === 'rating' ? 'star-outline' : 'text-outline'} size={14} color={colors.muted} />
+            <Text style={s.sortText}>{opts.sort === 'date' ? 'Recent' : opts.sort === 'rating' ? 'Rating' : 'A-Z'}</Text>
+          </TouchableOpacity>
+          <View style={s.viewToggle}>
+            <TouchableOpacity style={[s.viewBtn, opts.viewMode === 'grid' && s.viewBtnActive]} onPress={() => opts.setViewMode('grid')}><Ionicons name="grid-outline" size={14} color={opts.viewMode === 'grid' ? colors.red : colors.subtle} /></TouchableOpacity>
+            <TouchableOpacity style={[s.viewBtn, opts.viewMode === 'list' && s.viewBtnActive]} onPress={() => opts.setViewMode('list')}><Ionicons name="list-outline" size={14} color={opts.viewMode === 'list' ? colors.red : colors.subtle} /></TouchableOpacity>
+          </View>
+        </View>
+      </View>
+      {opts.genres.length > 0 && (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.genreScroll}>
+          <TouchableOpacity style={[s.genrePill, opts.genre === 'all' && s.genrePillActive]} onPress={() => opts.setGenre('all')}><Text style={[s.genrePillText, opts.genre === 'all' && s.genrePillTextActive]}>All</Text></TouchableOpacity>
+          {opts.genres.map(g => <TouchableOpacity key={g} style={[s.genrePill, opts.genre === g && s.genrePillActive]} onPress={() => opts.setGenre(g)}><Text style={[s.genrePillText, opts.genre === g && s.genrePillTextActive]}>{g}</Text></TouchableOpacity>)}
+        </ScrollView>
+      )}
+      <Text style={s.countText}>{opts.count} film{opts.count !== 1 ? 's' : ''}</Text>
+    </>
+  );
+
+  const activeViewMode = tab === 'watchlist' ? wlViewMode : tab === 'favorites' ? favViewMode : viewMode;
+  const activeSearch = tab === 'watchlist' ? wlSearch : tab === 'favorites' ? favSearch : search;
+  const activeGenre = tab === 'watchlist' ? wlGenre : tab === 'favorites' ? favGenre : genre;
+
   const renderMovieList = (movies: MovieActivity[]) => {
     if (!movies.length) return (
       <View style={s.empty}>
         <Ionicons name={tab === 'watchlist' ? 'bookmark-outline' : tab === 'favorites' ? 'heart-outline' : 'eye-outline'} size={40} color="rgba(255,255,255,0.1)" />
-        <Text style={s.emptyText}>{tab === 'watched' ? (search || genre !== 'all' ? 'No movies match your filters.' : 'No movies watched yet.') : tab === 'watchlist' ? 'Your watchlist is empty.' : 'No favorites yet.'}</Text>
+        <Text style={s.emptyText}>{tab === 'watched' ? (activeSearch || activeGenre !== 'all' ? 'No movies match your filters.' : 'No movies watched yet.') : tab === 'watchlist' ? (activeSearch || activeGenre !== 'all' ? 'No movies match your filters.' : 'Your watchlist is empty.') : (activeSearch || activeGenre !== 'all' ? 'No movies match your filters.' : 'No favorites yet.')}</Text>
       </View>
     );
-    if (viewMode === 'list') return <View style={{ gap: 8 }}>{movies.map(renderMiniList)}</View>;
+    if (activeViewMode === 'list') return <View style={{ gap: 8 }}>{movies.map(renderMiniList)}</View>;
     const rows: MovieActivity[][] = [];
     for (let i = 0; i < movies.length; i += GRID_COLS) rows.push(movies.slice(i, i + GRID_COLS));
     return <View style={{ gap: GRID_GAP }}>{rows.map((row, ri) => <View key={ri} style={{ flexDirection: 'row', gap: GRID_GAP }}>{row.map(renderMiniGrid)}</View>)}</View>;
@@ -145,84 +232,122 @@ export default function ProfileScreen() {
           <LinearGradient colors={['#1a0505', '#0d0d0d']} start={{ x: 0.3, y: 0 }} end={{ x: 1, y: 1 }} style={s.banner} />
           <View style={s.headerBody}>
             <View style={s.avatarRow}>
-              <View style={s.avatarRing}>
-                {isEmoji ? <Text style={{ fontSize: 32 }}>{profile!.photoURL}</Text> :
-                  profile?.photoURL?.startsWith('http') ? <Image source={{ uri: profile.photoURL }} style={{ width: '100%', height: '100%', borderRadius: 40 }} /> :
-                  <Text style={s.avatarText}>{initials}</Text>}
-              </View>
+              <ProfileRing tier={getTier(searchCount)}>
+                <View style={s.avatarInner}>
+                  {isEmoji ? <Text style={{ fontSize: 32 }}>{profile!.photoURL}</Text> :
+                    profile?.photoURL?.startsWith('http') ? <Image source={{ uri: profile.photoURL }} style={{ width: '100%', height: '100%', borderRadius: 30 }} /> :
+                    <Text style={s.avatarText}>{initials}</Text>}
+                </View>
+              </ProfileRing>
               <View style={{ flex: 1 }}>
                 <Text style={s.displayName}>{displayName}</Text>
                 {user?.email ? <Text style={s.email}>{user.email}</Text> : null}
+                <View style={s.tierRow}>
+                  <View style={[s.tierDot, { backgroundColor: TIER_META[getTier(searchCount)].color }]} />
+                  <Text style={[s.tierLabel, { color: TIER_META[getTier(searchCount)].color }]}>{TIER_META[getTier(searchCount)].label}</Text>
+                </View>
+                <Text style={s.tierDesc}>
+                  {searchCount} search{searchCount !== 1 ? 'es' : ''}
+                  {getNextTier(getTier(searchCount)).next
+                    ? ` · ${getNextTier(getTier(searchCount)).needed - searchCount} more to ${TIER_META[getNextTier(getTier(searchCount)).next!].label}`
+                    : ' · Max level reached 🏆'}
+                </Text>
               </View>
             </View>
             {/* Stat cards */}
             <View style={s.statsRow}>
-              <View style={s.statCard}><Ionicons name="eye-outline" size={18} color={colors.red} /><Text style={s.statNum}>{watched.length}</Text><Text style={s.statLabel} numberOfLines={1}>Watched</Text></View>
-              <View style={s.statCard}><Ionicons name="bookmark-outline" size={18} color={colors.gold} /><Text style={s.statNum}>{toWatch.length}</Text><Text style={s.statLabel} numberOfLines={1}>Watchlist</Text></View>
-              <View style={s.statCard}><Ionicons name="heart-outline" size={18} color="#ff6b6b" /><Text style={s.statNum}>{favs.length}</Text><Text style={s.statLabel} numberOfLines={1}>Favorites</Text></View>
-              <View style={s.statCard}><Ionicons name="star-outline" size={18} color={colors.gold} /><Text style={s.statNum}>{avgRating}</Text><Text style={s.statLabel} numberOfLines={1}>Avg</Text></View>
+              <View style={s.statCard}><Ionicons name="eye-outline" size={16} color={colors.red} /><Text style={s.statNum}>{watched.length}</Text><Text style={s.statLabel} numberOfLines={1}>Watched</Text></View>
+              <View style={s.statCard}><Ionicons name="bookmark-outline" size={16} color={colors.gold} /><Text style={s.statNum}>{toWatch.length}</Text><Text style={s.statLabel} numberOfLines={1}>Watchlist</Text></View>
+              <View style={s.statCard}><Ionicons name="heart-outline" size={16} color="#ff6b6b" /><Text style={s.statNum}>{favs.length}</Text><Text style={s.statLabel} numberOfLines={1}>Favorites</Text></View>
+              <View style={s.statCard}><Ionicons name="people-outline" size={16} color="#4ade80" /><Text style={s.statNum}>{friendsCount}</Text><Text style={s.statLabel} numberOfLines={1}>Friends</Text></View>
+              <View style={s.statCard}><Ionicons name="star-outline" size={16} color={colors.gold} /><Text style={s.statNum}>{avgRating}</Text><Text style={s.statLabel} numberOfLines={1}>Avg</Text></View>
             </View>
           </View>
         </View>
 
         {/* Tabs */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.tabRow}>
+        <View style={s.tabRow}>
           {tabs.map(t => (
             <TouchableOpacity key={t.id} style={[s.tab, tab === t.id && s.tabActive]} onPress={() => setTab(t.id)}>
-              <Ionicons name={t.icon as any} size={14} color={tab === t.id ? colors.white : colors.subtle} />
+              <Ionicons name={t.icon as any} size={16} color={tab === t.id ? colors.white : colors.subtle} />
               <Text style={[s.tabText, tab === t.id && s.tabTextActive]}>{t.label}</Text>
-              {t.count !== null && t.count > 0 && <View style={[s.tabBadge, tab === t.id && s.tabBadgeActive]}><Text style={[s.tabBadgeText, tab === t.id && { color: colors.red }]}>{t.count}</Text></View>}
+
             </TouchableOpacity>
           ))}
-        </ScrollView>
+        </View>
 
         {/* Tab content */}
         <View style={s.content}>
           {tab === 'watched' && (
             <>
-              {/* Search + sort + filter + view toggle */}
-              <View style={s.filterBar}>
-                <View style={s.searchWrap}>
-                  <Ionicons name="search" size={14} color={colors.subtle} style={{ position: 'absolute', left: 10, top: 10, zIndex: 1 }} />
-                  <TextInput style={s.searchInput} placeholder="Search watched…" placeholderTextColor={colors.subtle} value={search} onChangeText={setSearch} />
-                </View>
-                <View style={s.filterActions}>
-                  <TouchableOpacity style={s.sortBtn} onPress={() => setSort(sort === 'date' ? 'rating' : sort === 'rating' ? 'title' : 'date')}>
-                    <Ionicons name={sort === 'date' ? 'time-outline' : sort === 'rating' ? 'star-outline' : 'text-outline'} size={14} color={colors.muted} />
-                    <Text style={s.sortText}>{sort === 'date' ? 'Recent' : sort === 'rating' ? 'Rating' : 'A-Z'}</Text>
-                  </TouchableOpacity>
-                  <View style={s.viewToggle}>
-                    <TouchableOpacity style={[s.viewBtn, viewMode === 'grid' && s.viewBtnActive]} onPress={() => setViewMode('grid')}><Ionicons name="grid-outline" size={14} color={viewMode === 'grid' ? colors.red : colors.subtle} /></TouchableOpacity>
-                    <TouchableOpacity style={[s.viewBtn, viewMode === 'list' && s.viewBtnActive]} onPress={() => setViewMode('list')}><Ionicons name="list-outline" size={14} color={viewMode === 'list' ? colors.red : colors.subtle} /></TouchableOpacity>
-                  </View>
-                </View>
-              </View>
-              {/* Genre filter pills */}
-              {genres.length > 0 && (
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.genreScroll}>
-                  <TouchableOpacity style={[s.genrePill, genre === 'all' && s.genrePillActive]} onPress={() => setGenre('all')}><Text style={[s.genrePillText, genre === 'all' && s.genrePillTextActive]}>All</Text></TouchableOpacity>
-                  {genres.map(g => <TouchableOpacity key={g} style={[s.genrePill, genre === g && s.genrePillActive]} onPress={() => setGenre(g)}><Text style={[s.genrePillText, genre === g && s.genrePillTextActive]}>{g}</Text></TouchableOpacity>)}
-                </ScrollView>
-              )}
-              <Text style={s.countText}>{filtered.length} film{filtered.length !== 1 ? 's' : ''}</Text>
+              {renderFilterBar({ search, setSearch, sort, setSort, genre, setGenre, viewMode, setViewMode, genres, count: filtered.length, placeholder: 'Search watched…' })}
               {renderMovieList(filtered)}
             </>
           )}
-          {tab === 'watchlist' && renderMovieList(toWatch)}
-          {tab === 'favorites' && renderMovieList(favs)}
-          {tab === 'stats' && (
+          {tab === 'watchlist' && (
+            <>
+              {renderFilterBar({ search: wlSearch, setSearch: setWlSearch, sort: wlSort, setSort: setWlSort, genre: wlGenre, setGenre: setWlGenre, viewMode: wlViewMode, setViewMode: setWlViewMode, genres: wlGenres, count: filteredWl.length, placeholder: 'Search watchlist…' })}
+              {renderMovieList(filteredWl)}
+            </>
+          )}
+          {tab === 'favorites' && (
+            <>
+              {renderFilterBar({ search: favSearch, setSearch: setFavSearch, sort: favSort, setSort: setFavSort, genre: favGenre, setGenre: setFavGenre, viewMode: favViewMode, setViewMode: setFavViewMode, genres: favGenres, count: filteredFav.length, placeholder: 'Search favorites…' })}
+              {renderMovieList(filteredFav)}
+            </>
+          )}
+          {tab === 'stats' && (() => {
+            const tier = getTier(searchCount);
+            const { next, needed } = getNextTier(tier);
+            const tierMeta = TIER_META[tier];
+            const progress = next ? searchCount / needed : 1;
+            return (
             <View style={{ gap: 16 }}>
-              {/* Genre bar chart */}
-              {stats?.genreCounts?.length > 0 && (
+              {/* Tier ring card */}
+              <View style={s.card}>
+                <View style={{ alignItems: 'center', gap: 10 }}>
+                  <ProfileRing tier={tier}>
+                    <View style={[s.avatarInner, { width: 60, height: 60 }]}>
+                      <Text style={{ color: tierMeta.color, fontSize: 22, fontWeight: '900' }}>{searchCount}</Text>
+                    </View>
+                  </ProfileRing>
+                  <Text style={{ color: tierMeta.color, fontSize: 16, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1 }}>{tierMeta.label}</Text>
+                  <Text style={{ color: colors.subtle, fontSize: 12 }}>
+                    {next ? `${needed - searchCount} more searches to ${TIER_META[next].label}` : 'Max level reached 🏆'}
+                  </Text>
+                  {next && (
+                    <View style={{ width: '100%', height: 6, backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 99, overflow: 'hidden' }}>
+                      <View style={{ height: '100%', width: `${Math.min(progress * 100, 100)}%`, backgroundColor: tierMeta.color, borderRadius: 99 }} />
+                    </View>
+                  )}
+                </View>
+              </View>
+              {/* Top genres grouped bar chart */}
+              {topGenresByList.length > 0 && (
                 <View style={s.card}>
                   <View style={s.cardHeader}><Ionicons name="bar-chart-outline" size={15} color={colors.red} /><Text style={s.cardTitle}>Top Genres</Text></View>
-                  {stats.genreCounts.map(([g, c]: [string, number]) => {
-                    const max = stats.genreCounts[0][1] || 1;
+                  {/* Legend */}
+                  <View style={{ flexDirection: 'row', gap: 14, marginBottom: 14 }}>
+                    {([['Watched', colors.red], ['Watchlist', colors.gold], ['Favorites', '#ff6b6b']] as const).map(([l, c]) => (
+                      <View key={l} style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                        <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: c }} />
+                        <Text style={{ color: colors.subtle, fontSize: 10, fontWeight: '600' }}>{l}</Text>
+                      </View>
+                    ))}
+                  </View>
+                  {topGenresByList.map(g => {
+                    const max = topGenresByList[0].total || 1;
                     return (
-                      <View key={g} style={s.barRow}>
-                        <Text style={s.barLabel} numberOfLines={1}>{g}</Text>
-                        <View style={s.barTrack}><View style={[s.barFill, { width: `${(c / max) * 100}%` }]} /></View>
-                        <Text style={s.barCount}>{c}</Text>
+                      <View key={g.genre} style={{ marginBottom: 12 }}>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                          <Text style={{ color: '#ccc', fontSize: 13, fontWeight: '600' }} numberOfLines={1}>{g.genre}</Text>
+                          <Text style={{ color: colors.subtle, fontSize: 11, fontWeight: '600' }}>{g.total}</Text>
+                        </View>
+                        <View style={{ flexDirection: 'row', height: 6, backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 99, overflow: 'hidden' }}>
+                          {g.watched > 0 && <View style={{ width: `${(g.watched / max) * 100}%`, backgroundColor: colors.red, height: '100%' }} />}
+                          {g.watchlist > 0 && <View style={{ width: `${(g.watchlist / max) * 100}%`, backgroundColor: colors.gold, height: '100%' }} />}
+                          {g.favorites > 0 && <View style={{ width: `${(g.favorites / max) * 100}%`, backgroundColor: '#ff6b6b', height: '100%' }} />}
+                        </View>
                       </View>
                     );
                   })}
@@ -235,7 +360,7 @@ export default function ProfileScreen() {
                   { label: 'Movies Watched', value: watched.length, icon: 'eye-outline', color: colors.red },
                   { label: 'In Watchlist', value: toWatch.length, icon: 'bookmark-outline', color: colors.gold },
                   { label: 'Marked Favorite', value: favs.length, icon: 'heart-outline', color: '#ff6b6b' },
-                  { label: 'Rated', value: watched.filter(m => m.rating && m.rating > 0).length, icon: 'star-outline', color: '#a78bfa' },
+                  { label: 'Rated', value: (() => { const all = [...watched, ...toWatch, ...favs]; const seen = new Set<string>(); return all.filter(m => { if (seen.has(m.movieId)) return false; seen.add(m.movieId); return true; }).filter(m => m.rating && m.rating > 0).length; })(), icon: 'star-outline', color: '#a78bfa' },
                 ].map(item => (
                   <View key={item.label} style={s.actRow}>
                     <Ionicons name={item.icon as any} size={14} color={item.color} />
@@ -252,7 +377,8 @@ export default function ProfileScreen() {
                 )}
               </View>
             </View>
-          )}
+            );
+          })()}
         </View>
       </ScrollView>
 
@@ -270,27 +396,32 @@ const s = StyleSheet.create({
   signOutBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8 },
   signOutText: { color: colors.muted, fontSize: 13, fontWeight: '600' },
   // Header card
+  // Header card
   headerCard: { marginHorizontal: 16, borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', backgroundColor: 'rgba(255,255,255,0.02)', marginBottom: 16 },
   banner: { height: 100 },
   headerBody: { padding: 16, marginTop: -40 },
   avatarRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 12, marginBottom: 16 },
-  avatarRing: { width: 80, height: 80, borderRadius: 40, borderWidth: 3, borderColor: colors.red, backgroundColor: 'rgba(229,9,20,0.2)', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  avatarInner: { width: 60, height: 60, borderRadius: 30, backgroundColor: 'rgba(229,9,20,0.2)', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  tierRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 },
+  tierDot: { width: 6, height: 6, borderRadius: 3 },
+  tierLabel: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
+  tierDesc: { color: colors.subtle, fontSize: 10, marginTop: 2 },
   avatarText: { color: colors.white, fontSize: 32, fontWeight: '900' },
   displayName: { color: colors.white, fontSize: 20, fontWeight: '900' },
   email: { color: colors.subtle, fontSize: 12, marginTop: 2 },
-  statsRow: { flexDirection: 'row', gap: 8 },
-  statCard: { flex: 1, backgroundColor: 'rgba(255,255,255,0.03)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', borderRadius: 12, paddingVertical: 10, paddingHorizontal: 4, alignItems: 'center', gap: 4 },
-  statNum: { color: colors.white, fontSize: 20, fontWeight: '900' },
-  statLabel: { color: colors.subtle, fontSize: 9, fontWeight: '600', textTransform: 'uppercase', textAlign: 'center' },
+  statsRow: { flexDirection: 'row', gap: 6 },
+  statCard: { flex: 1, backgroundColor: 'rgba(255,255,255,0.03)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', borderRadius: 10, paddingVertical: 8, paddingHorizontal: 2, alignItems: 'center', gap: 2 },
+  statNum: { color: colors.white, fontSize: 17, fontWeight: '900' },
+  statLabel: { color: colors.subtle, fontSize: 8, fontWeight: '600', textTransform: 'uppercase', textAlign: 'center' },
   // Tabs
-  tabRow: { paddingHorizontal: 16, gap: 4, marginBottom: 16 },
-  tab: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 2, borderBottomColor: 'transparent' },
+  tabRow: { flexDirection: 'row', paddingHorizontal: 16, gap: 2, marginBottom: 16 },
+  tab: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3, paddingVertical: 10, borderBottomWidth: 2, borderBottomColor: 'transparent' },
   tabActive: { borderBottomColor: colors.red },
-  tabText: { color: colors.subtle, fontSize: 14, fontWeight: '600' },
+  tabText: { color: colors.subtle, fontSize: 11, fontWeight: '600' },
   tabTextActive: { color: colors.white, fontWeight: '700' },
-  tabBadge: { backgroundColor: 'rgba(255,255,255,0.07)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', borderRadius: 99, paddingHorizontal: 6, paddingVertical: 1 },
+  tabBadge: { backgroundColor: 'rgba(255,255,255,0.07)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', borderRadius: 99, paddingHorizontal: 5, paddingVertical: 1 },
   tabBadgeActive: { backgroundColor: 'rgba(229,9,20,0.2)', borderColor: 'rgba(229,9,20,0.35)' },
-  tabBadgeText: { color: colors.subtle, fontSize: 11, fontWeight: '700' },
+  tabBadgeText: { color: colors.subtle, fontSize: 10, fontWeight: '700' },
   // Content
   content: { paddingHorizontal: 16 },
   // Filter bar

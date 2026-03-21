@@ -11,12 +11,14 @@ import { colors } from '../theme/colors';
 import { getGenreColor } from '../theme/genreColors';
 import { useAuth } from '../contexts/AuthContext';
 import {
-  getFriendRequests, acceptFriendRequest, rejectFriendRequest,
+  getFriendRequests, subscribeToFriendRequests, acceptFriendRequest, rejectFriendRequest,
   getFriends, getUserProfile, searchUserByUsername, sendFriendRequest,
   areFriends, hasPendingRequest, getUserStats, getMovieList,
-  findUsersByEmails,
+  findUsersByEmails, getSearchCount,
   type FriendRequest, type UserProfile, type MovieActivity,
 } from '../lib/firestore';
+import ProfileRing, { getTier, TIER_META } from '../components/ProfileRing';
+import ProfileMovieModal from '../components/ProfileMovieModal';
 
 type Tab = 'friends' | 'requests';
 
@@ -39,6 +41,10 @@ export default function FriendsScreen() {
   const [friendWatchlist, setFriendWatchlist] = useState<MovieActivity[]>([]);
   const [profileLoading, setProfileLoading] = useState(false);
   const [friendTab, setFriendTab] = useState<'watched' | 'watchlist' | 'favorites'>('watched');
+  const [friendSearchCounts, setFriendSearchCounts] = useState<Record<string, number>>({});
+  const [friendModalSearchCount, setFriendModalSearchCount] = useState(0);
+  const [friendFriendsCount, setFriendFriendsCount] = useState(0);
+  const [selectedFriendMovie, setSelectedFriendMovie] = useState<MovieActivity | null>(null);
 
   // Suggested friends state
   const [suggestedVisible, setSuggestedVisible] = useState(false);
@@ -50,28 +56,43 @@ export default function FriendsScreen() {
     setSelectedFriend(friend);
     setFriendTab('watched');
     setProfileLoading(true);
+    setFriendModalSearchCount(0);
+    setFriendFriendsCount(0);
     try {
-      const [stats, favs, watched, watchlist] = await Promise.all([
+      const [stats, favs, watched, watchlist, sc, fc] = await Promise.all([
         getUserStats(friend.uid),
         getMovieList(friend.uid, 'favorite'),
         getMovieList(friend.uid, 'watched'),
         getMovieList(friend.uid, 'toWatch'),
+        getSearchCount(friend.uid),
+        getFriends(friend.uid),
       ]);
       setFriendStats(stats);
       setFriendFavs(favs);
       setFriendWatched(watched);
       setFriendWatchlist(watchlist);
+      setFriendModalSearchCount(sc);
+      setFriendFriendsCount(fc.length);
     } catch {} finally { setProfileLoading(false); }
   };
+
+  // Real-time listener for friend requests
+  useEffect(() => {
+    if (!user?.uid) return;
+    const unsub = subscribeToFriendRequests(user.uid, setRequests);
+    return () => unsub();
+  }, [user?.uid]);
 
   const loadData = async () => {
     if (!user?.uid) return;
     setLoading(true);
     try {
-      const [reqs, friendIds] = await Promise.all([getFriendRequests(user.uid), getFriends(user.uid)]);
-      setRequests(reqs);
+      const friendIds = await getFriends(user.uid);
       const profiles = await Promise.all(friendIds.map(id => getUserProfile(id)));
       setFriends(profiles.filter(Boolean));
+      const counts: Record<string, number> = {};
+      await Promise.all(friendIds.map(async id => { counts[id] = await getSearchCount(id).catch(() => 0); }));
+      setFriendSearchCounts(counts);
     } catch {} finally { setLoading(false); }
   };
 
@@ -124,13 +145,14 @@ export default function FriendsScreen() {
   };
 
   const handleAccept = async (req: FriendRequest) => {
+    setRequests(prev => prev.filter(r => r.id !== req.id));
     await acceptFriendRequest(user!.uid, req.id, req.fromUserId);
     loadData();
   };
 
   const handleReject = async (req: FriendRequest) => {
+    setRequests(prev => prev.filter(r => r.id !== req.id));
     await rejectFriendRequest(user!.uid, req.id);
-    loadData();
   };
 
   const handleSearch = async () => {
@@ -249,7 +271,7 @@ export default function FriendsScreen() {
         <FlatList
           data={tab === 'friends' ? friends : requests}
           keyExtractor={(item, i) => (tab === 'friends' ? item?.uid || i.toString() : item?.id || i.toString())}
-          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 100 }}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 140 }}
           ListEmptyComponent={
             <View style={s.empty}>
               <Ionicons name={tab === 'friends' ? 'people-outline' : 'notifications-outline'} size={40} color="rgba(255,255,255,0.1)" />
@@ -281,11 +303,13 @@ export default function FriendsScreen() {
             const isUrl = friend?.photoURL && friend.photoURL.startsWith('http');
             return (
               <TouchableOpacity style={s.friendCard} activeOpacity={0.7} onPress={() => openFriendProfile(friend)}>
-                <View style={s.avatar}>
-                  {isUrl ? <Image source={{ uri: friend.photoURL }} style={{ width: '100%', height: '100%', borderRadius: 12 }} />
-                    : isEmoji ? <Text style={{ fontSize: 22 }}>{friend.photoURL}</Text>
-                    : <Text style={s.avatarText}>{(friend?.displayName || '?').charAt(0).toUpperCase()}</Text>}
-                </View>
+                <ProfileRing tier={getTier(friendSearchCounts[friend.uid] || 0)} size="small">
+                  <View style={s.avatarSmall}>
+                    {isUrl ? <Image source={{ uri: friend.photoURL }} style={{ width: '100%', height: '100%', borderRadius: 16 }} />
+                      : isEmoji ? <Text style={{ fontSize: 16 }}>{friend.photoURL}</Text>
+                      : <Text style={s.avatarSmallText}>{(friend?.displayName || '?').charAt(0).toUpperCase()}</Text>}
+                  </View>
+                </ProfileRing>
                 <View style={{ flex: 1 }}>
                   <Text style={s.name}>{friend?.displayName || 'User'}</Text>
                   <Text style={s.sub}>View profile →</Text>
@@ -364,14 +388,21 @@ export default function FriendsScreen() {
             <ActivityIndicator color={colors.red} style={{ marginTop: 60 }} />
           ) : selectedFriend && (
             <ScrollView contentContainerStyle={s.modalContent}>
-              <View style={s.profileAvatar}>
-                {selectedFriend.photoURL?.startsWith('http')
-                  ? <Image source={{ uri: selectedFriend.photoURL }} style={{ width: '100%', height: '100%', borderRadius: 40 }} />
-                  : selectedFriend.photoURL && !selectedFriend.photoURL.startsWith('http')
-                    ? <Text style={{ fontSize: 36 }}>{selectedFriend.photoURL}</Text>
-                    : <Text style={s.profileAvatarText}>{(selectedFriend.displayName || '?').charAt(0).toUpperCase()}</Text>}
-              </View>
+              <ProfileRing tier={getTier(friendModalSearchCount)} size="medium">
+                <View style={s.profileAvatarInner}>
+                  {selectedFriend.photoURL?.startsWith('http')
+                    ? <Image source={{ uri: selectedFriend.photoURL }} style={{ width: '100%', height: '100%', borderRadius: 30 }} />
+                    : selectedFriend.photoURL && !selectedFriend.photoURL.startsWith('http')
+                      ? <Text style={{ fontSize: 28 }}>{selectedFriend.photoURL}</Text>
+                      : <Text style={s.profileAvatarText}>{(selectedFriend.displayName || '?').charAt(0).toUpperCase()}</Text>}
+                </View>
+              </ProfileRing>
               <Text style={s.profileName}>{selectedFriend.displayName || 'User'}</Text>
+              <View style={s.tierRow}>
+                <View style={[s.tierDot, { backgroundColor: TIER_META[getTier(friendModalSearchCount)].color }]} />
+                <Text style={[s.tierLabel, { color: TIER_META[getTier(friendModalSearchCount)].color }]}>{TIER_META[getTier(friendModalSearchCount)].label}</Text>
+                <Text style={s.tierCount}>{friendModalSearchCount} search{friendModalSearchCount !== 1 ? 'es' : ''}</Text>
+              </View>
 
               {friendStats && (
                 <>
@@ -387,6 +418,10 @@ export default function FriendsScreen() {
                     <View style={s.statBox}>
                       <Text style={s.statNum}>{friendStats.totalFavorites}</Text>
                       <Text style={s.statLabel}>Favorites</Text>
+                    </View>
+                    <View style={s.statBox}>
+                      <Text style={s.statNum}>{friendFriendsCount}</Text>
+                      <Text style={s.statLabel}>Friends</Text>
                     </View>
                     <View style={s.statBox}>
                       <Text style={s.statNum}>{friendStats.averageRating || '—'}</Text>
@@ -428,6 +463,7 @@ export default function FriendsScreen() {
                 <View style={s.friendMovieGrid}>
                   {(friendTab === 'watched' ? friendWatched : friendTab === 'watchlist' ? friendWatchlist : friendFavs).map((m, i) => (
                     <View key={m.movieId || i} style={s.friendMovieCard}>
+                      <TouchableOpacity activeOpacity={0.85} onPress={() => setSelectedFriendMovie(m)}>
                       {m.poster ? (
                         <Image source={{ uri: m.poster }} style={s.friendMoviePoster} />
                       ) : (
@@ -435,6 +471,7 @@ export default function FriendsScreen() {
                           <Ionicons name="film-outline" size={20} color={colors.subtle} />
                         </View>
                       )}
+                      </TouchableOpacity>
                       <Text style={s.friendMovieTitle} numberOfLines={1}>{m.title}</Text>
                       <View style={s.friendMovieMeta}>
                         {m.year ? <Text style={s.friendMovieYear}>{m.year}</Text> : null}
@@ -448,6 +485,8 @@ export default function FriendsScreen() {
           )}
         </SafeAreaView>
       </Modal>
+
+      <ProfileMovieModal movie={selectedFriendMovie} onClose={() => setSelectedFriendMovie(null)} readOnly />
     </View>
   );
 }
@@ -483,6 +522,8 @@ const s = StyleSheet.create({
   tabBadgeText: { color: colors.subtle, fontSize: 11, fontWeight: '700' },
   // Cards
   avatar: { width: 48, height: 48, borderRadius: 12, backgroundColor: 'rgba(229,9,20,0.2)', borderWidth: 2, borderColor: 'rgba(229,9,20,0.3)', alignItems: 'center', justifyContent: 'center' },
+  avatarSmall: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(229,9,20,0.2)', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  avatarSmallText: { color: colors.white, fontSize: 14, fontWeight: '800' },
   avatarText: { color: colors.white, fontSize: 18, fontWeight: '800' },
   name: { color: colors.white, fontSize: 15, fontWeight: '700' },
   sub: { color: colors.subtle, fontSize: 12, marginTop: 2 },
@@ -499,9 +540,13 @@ const s = StyleSheet.create({
   modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 16, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.07)' },
   modalTitle: { color: colors.white, fontSize: 17, fontWeight: '700' },
   modalContent: { alignItems: 'center', padding: 24, paddingBottom: 60 },
-  profileAvatar: { width: 80, height: 80, borderRadius: 40, backgroundColor: 'rgba(229,9,20,0.2)', borderWidth: 3, borderColor: 'rgba(229,9,20,0.4)', alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
-  profileAvatarText: { color: colors.white, fontSize: 32, fontWeight: '800' },
-  profileName: { color: colors.white, fontSize: 22, fontWeight: '900', marginBottom: 20 },
+  profileAvatarInner: { width: 60, height: 60, borderRadius: 30, backgroundColor: 'rgba(229,9,20,0.2)', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  profileAvatarText: { color: colors.white, fontSize: 26, fontWeight: '800' },
+  profileName: { color: colors.white, fontSize: 22, fontWeight: '900', marginBottom: 4 },
+  tierRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 20 },
+  tierDot: { width: 7, height: 7, borderRadius: 4 },
+  tierLabel: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
+  tierCount: { color: colors.subtle, fontSize: 11 },
   statsRow: { flexDirection: 'row', gap: 12, marginBottom: 24, width: '100%' },
   statBox: { flex: 1, alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.03)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', borderRadius: 12, paddingVertical: 14 },
   statNum: { color: colors.white, fontSize: 20, fontWeight: '800' },
