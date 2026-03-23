@@ -18,14 +18,17 @@ import MovieCard from '../components/MovieCard';
 import SharedMovieModal from '../components/SharedMovieModal';
 
 const { width: SCREEN_W } = Dimensions.get('window');
-const TRENDING = [
-  { label: 'Oscar winners 2024', meta: 'Awards · Drama',    badge: 'hot' as const },
-  { label: 'Dark thriller',       meta: 'Thriller · Crime',  badge: null },
-  { label: 'Feel-good anime',     meta: 'Animation · Comedy', badge: 'new' as const },
-  { label: 'Heist movies',        meta: 'Crime · Action',    badge: null },
-  { label: 'Slow burn romance',   meta: 'Romance · Drama',   badge: null },
-  { label: '90s action classics', meta: 'Action · Nostalgia', badge: null },
+
+// ─── Ghost card data for the blurred preview ──────────────────────────────────
+const GHOST_CARDS = [
+  { rating: '9.1', genre: 'Thriller',  match: '97%', icon: '🎬' },
+  { rating: '8.7', genre: 'Drama',     match: '95%', icon: '📺' },
+  { rating: '8.4', genre: 'Crime',     match: '91%', icon: '🎥' },
+  { rating: '7.9', genre: 'Sci-Fi',    match: '88%', icon: '🎞' },
+  { rating: '8.2', genre: 'Action',    match: '86%', icon: '🍿' },
+  { rating: '8.5', genre: 'Horror',    match: '83%', icon: '🎬' },
 ];
+
 const RATINGS = ['Any', '7+', '8+', '9+'];
 
 type Category = 'all' | 'movie' | 'tv';
@@ -39,6 +42,102 @@ function getResetTime(): string {
   const m = Math.floor((diff % 3600000) / 60000);
   if (h > 0) return `${h}h ${m}m`;
   return `${m}m`;
+}
+
+// ─── Ghost movie card (blurred behind the overlay) ────────────────────────────
+function GhostCard({ rating, genre, match }: { rating: string; genre: string; match: string }) {
+  return (
+    <View style={g.card}>
+      {/* skeleton poster body */}
+      <View style={g.cardBody} />
+      {/* match badge top-left */}
+      <View style={g.matchBadge}>
+        <Text style={g.matchText}>{match}</Text>
+      </View>
+      {/* rating badge top-right */}
+      <View style={g.ratingBadge}>
+        <Text style={g.ratingText}>★ {rating}</Text>
+      </View>
+      {/* genre tag bottom-left */}
+      <View style={g.genreTag}>
+        <Text style={g.genreText}>{genre}</Text>
+      </View>
+      {/* skeleton title lines */}
+      <View style={g.titleLine} />
+      <View style={[g.titleLine, { width: '60%', marginTop: 4 }]} />
+    </View>
+  );
+}
+
+// ─── Premium locked section ───────────────────────────────────────────────────
+function PremiumPicksSection({ onUnlock }: { onUnlock?: () => void }) {
+  const CARD_W = (SCREEN_W - 44 - 14) / 3; // 3 cols, 22px side padding each, 7px gaps
+
+  return (
+    <View style={p.wrapper}>
+      {/* section header */}
+      <View style={p.header}>
+        <View>
+          <Text style={p.headerTitle}>Picked for you</Text>
+          <Text style={p.headerSub}>Based on your taste</Text>
+        </View>
+        <View style={p.aiBadge}>
+          <Text style={p.aiStar}>✦</Text>
+          <Text style={p.aiBadgeText}>AI</Text>
+        </View>
+      </View>
+
+      <View style={p.divider} />
+
+      {/* blurred ghost grid + overlay in one container */}
+      <View style={p.gridContainer}>
+        {/* ghost cards — visually blurred via opacity + overlay */}
+        <View style={p.ghostGrid}>
+          {GHOST_CARDS.map((card, i) => (
+            <View key={i} style={{ width: CARD_W }}>
+              <GhostCard rating={card.rating} genre={card.genre} match={card.match} />
+            </View>
+          ))}
+        </View>
+
+        {/* premium lock overlay */}
+        <View style={p.overlay}>
+          {/* lock icon */}
+          <View style={p.lockCircle}>
+            <Ionicons name="lock-closed" size={22} color={colors.red} />
+          </View>
+
+          {/* copy */}
+          <Text style={p.overlayTitle}>Unlock Personalized{'\n'}Recommendations</Text>
+          <Text style={p.overlaySub}>
+            Your AI taste profile is ready. Get movies picked just for you — upgrade to Premium.
+          </Text>
+
+          {/* CTA */}
+          <TouchableOpacity style={p.unlockBtn} onPress={onUnlock} activeOpacity={0.85}>
+            <LinearGradient colors={['#c0392b', '#e74c3c']} style={p.unlockGradient}>
+              <Text style={p.unlockStar}>✦</Text>
+              <Text style={p.unlockText}>Unlock with Premium</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+
+          {/* perks */}
+          <View style={p.perks}>
+            {[
+              'Daily picks tailored to your taste',
+              'Match scores based on your history',
+              'Unlimited AI credits',
+            ].map((perk, i) => (
+              <View key={i} style={p.perkRow}>
+                <View style={p.perkDot} />
+                <Text style={p.perkText}>{perk}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      </View>
+    </View>
+  );
 }
 
 export default function DiscoverScreen() {
@@ -71,7 +170,6 @@ export default function DiscoverScreen() {
 
   const [acceptingNotif, setAcceptingNotif] = useState<string | null>(null);
 
-  // Real-time notifications
   useEffect(() => {
     if (!user?.uid) return;
     let unsub: (() => void) | undefined;
@@ -89,7 +187,6 @@ export default function DiscoverScreen() {
     });
   };
 
-  // Load search history
   useEffect(() => {
     if (!user?.uid) return;
     AsyncStorage.getItem(`searchHistory_${user.uid}`).then(saved => {
@@ -137,7 +234,6 @@ export default function DiscoverScreen() {
       return;
     }
 
-    // AI search
     let llmQuery = searchQuery;
     if (category === 'movie') llmQuery += ', only movies (no TV series)';
     else if (category === 'tv') llmQuery += ', only TV series (no movies)';
@@ -187,6 +283,7 @@ export default function DiscoverScreen() {
       if (aiMode) refresh();
     }
   };
+
   const filteredResults = React.useMemo(() => {
     if (!hasSearched) return results;
     let filtered = allResults;
@@ -225,10 +322,10 @@ export default function DiscoverScreen() {
     </View>
   );
 
+  // ─── PRE-SEARCH HOME SCREEN ────────────────────────────────────────────────
   if (!hasSearched) {
     return (
       <View style={s.container}>
-        {/* Cinematic red glow from top */}
         <LinearGradient
           colors={['rgba(180,20,20,0.35)', 'transparent']}
           style={s.topGlow}
@@ -265,7 +362,9 @@ export default function DiscoverScreen() {
                   </View>
                   <View style={[s.streakPill, credits <= 1 && credits !== Infinity && s.streakPillLow]}>
                     <Ionicons name="flash" size={12} color={credits <= 1 && credits !== Infinity ? colors.red : credits > 0 ? colors.gold : colors.subtle} />
-                    <Text style={[s.topChipTextGold, credits <= 1 && credits !== Infinity && { color: colors.red }, credits === 0 && { color: colors.subtle }]}>{credits === Infinity ? '∞' : credits}/{maxCredits === Infinity ? '∞' : maxCredits}</Text>
+                    <Text style={[s.topChipTextGold, credits <= 1 && credits !== Infinity && { color: colors.red }, credits === 0 && { color: colors.subtle }]}>
+                      {credits === Infinity ? '∞' : credits}/{maxCredits === Infinity ? '∞' : maxCredits}
+                    </Text>
                   </View>
                 </>
               )}
@@ -284,7 +383,11 @@ export default function DiscoverScreen() {
             <Text style={s.heroLabel}>🎬 Discover</Text>
             <Text style={s.heroTitle}>Find Your Next</Text>
             <Text style={s.heroAccent}>Favorite Show</Text>
-            <Text style={s.heroSub}>{aiMode ? 'Describe any mood, genre, or vibe — our AI finds the perfect match for you.' : 'Search by movie or TV show title to find what you\'re looking for.'}</Text>
+            <Text style={s.heroSub}>
+              {aiMode
+                ? 'Describe any mood, genre, or vibe — our AI finds the perfect match for you.'
+                : "Search by movie or TV show title to find what you're looking for."}
+            </Text>
           </View>
 
           {/* AI Toggle */}
@@ -314,9 +417,10 @@ export default function DiscoverScreen() {
             </View>
             <TouchableOpacity onPress={() => handleSearch()} disabled={!query.trim() || loading}>
               <LinearGradient colors={['#c0392b', '#e74c3c']} style={s.searchBtn}>
-                {loading ? <ActivityIndicator color={colors.white} size="small" /> : (
-                  <Text style={s.playIcon}>▶</Text>
-                )}
+                {loading
+                  ? <ActivityIndicator color={colors.white} size="small" />
+                  : <Text style={s.playIcon}>▶</Text>
+                }
               </LinearGradient>
             </TouchableOpacity>
           </View>
@@ -343,11 +447,15 @@ export default function DiscoverScreen() {
             </View>
           )}
 
-          {/* Search history */}
+          {/* Search history dropdown */}
           {showHistory && searchHistory.length > 0 && (
             <View style={s.historyDropdown}>
               {searchHistory.slice(0, 6).map((h, i) => (
-                <TouchableOpacity key={i} style={s.historyItem} onPress={() => { setQuery(h); setShowHistory(false); handleSearch(h); }}>
+                <TouchableOpacity
+                  key={i}
+                  style={s.historyItem}
+                  onPress={() => { setQuery(h); setShowHistory(false); handleSearch(h); }}
+                >
                   <Ionicons name="time-outline" size={13} color={colors.subtle} />
                   <Text style={s.historyText}>{h}</Text>
                   <Ionicons name="arrow-up-outline" size={13} color={colors.subtle} style={{ marginLeft: 'auto', transform: [{ rotate: '-45deg' }] }} />
@@ -357,36 +465,16 @@ export default function DiscoverScreen() {
           )}
         </View>
 
-        {/* Scrollable trending (AI mode only) */}
-        {aiMode ? (
-          <ScrollView style={s.trendingScroll} contentContainerStyle={s.trendingScrollContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-            <View style={s.trendingHead}>
-              <Text style={s.trendingTitle}>Top searches today</Text>
-              <Text style={s.trendingSub}>Updated hourly</Text>
-            </View>
-            <View style={s.divider} />
-            {TRENDING.map((item, i) => (
-              <TouchableOpacity
-                key={item.label}
-                style={[s.eItem, i === TRENDING.length - 1 && { borderBottomWidth: 0 }]}
-                onPress={() => handleSearch(item.label)}
-              >
-                <Text style={[s.eNum, i < 3 && s.eNumTop]}>
-                  {String(i + 1).padStart(2, '0')}
-                </Text>
-                <View style={s.eTextWrap}>
-                  <Text style={s.eText}>{item.label}</Text>
-                  <Text style={s.eMeta}>{item.meta}</Text>
-                </View>
-                {item.badge === 'hot' && <Text style={s.eBadgeHot}>HOT</Text>}
-                {item.badge === 'new' && <Text style={s.eBadgeNew}>NEW</Text>}
-                {item.badge === null && <Text style={s.eArrow}>›</Text>}
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        ) : (
-          <View style={s.trendingScroll} />
-        )}
+        {/* ── REPLACED: Trending list → Premium personalised picks ────────────── */}
+        <ScrollView
+          style={s.trendingScroll}
+          contentContainerStyle={s.trendingScrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <PremiumPicksSection onUnlock={() => { /* TODO: open paywall */ }} />
+        </ScrollView>
+        {/* ─────────────────────────────────────────────────────────────────────── */}
 
         <SharedMovieModal />
 
@@ -414,7 +502,11 @@ export default function DiscoverScreen() {
               renderItem={({ item }) => (
                 <View style={[s.notifCard, !item.read && s.notifUnread]}>
                   <View style={s.notifIcon}>
-                    <Ionicons name={item.type === 'friend_request' ? 'person-add' : item.type === 'friend_accepted' ? 'people' : 'notifications'} size={16} color={colors.red} />
+                    <Ionicons
+                      name={item.type === 'friend_request' ? 'person-add' : item.type === 'friend_accepted' ? 'people' : 'notifications'}
+                      size={16}
+                      color={colors.red}
+                    />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={s.notifText}>{item.message}</Text>
@@ -451,7 +543,10 @@ export default function DiscoverScreen() {
                     </View>
                   ) : item.type === 'friend_request' && item.accepted ? (
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <View style={s.notifAcceptedBadge}><Ionicons name="checkmark" size={13} color="#4ade80" /><Text style={{ color: '#4ade80', fontSize: 11, fontWeight: '700' }}>Friends</Text></View>
+                      <View style={s.notifAcceptedBadge}>
+                        <Ionicons name="checkmark" size={13} color="#4ade80" />
+                        <Text style={{ color: '#4ade80', fontSize: 11, fontWeight: '700' }}>Friends</Text>
+                      </View>
                       <TouchableOpacity style={s.notifDeleteBtn} onPress={() => deleteNotification(user!.uid, item.id)}>
                         <Ionicons name="trash-outline" size={14} color={colors.subtle} />
                       </TouchableOpacity>
@@ -480,9 +575,9 @@ export default function DiscoverScreen() {
     );
   }
 
+  // ─── POST-SEARCH RESULTS SCREEN ────────────────────────────────────────────
   return (
     <View style={[s.container, { paddingTop: insets.top }]}>
-      {/* Search bar */}
       <View style={s.topBar}>
         <TouchableOpacity onPress={() => { setHasSearched(false); setResults([]); }} style={s.backBtn}>
           <Ionicons name="arrow-back" size={20} color={colors.text} />
@@ -506,7 +601,6 @@ export default function DiscoverScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Filters */}
       <View style={[s.filterRow, { paddingHorizontal: 16, marginBottom: 12 }]}>
         <FilterPill label="All" value="all" />
         <FilterPill label="Movies" value="movie" />
@@ -550,9 +644,10 @@ export default function DiscoverScreen() {
           ListFooterComponent={
             aiMode && filteredResults.length > 0 ? (
               <TouchableOpacity style={s.loadMoreBtn} onPress={handleLoadMore} disabled={loadingMore} activeOpacity={0.8}>
-                {loadingMore ? <ActivityIndicator color={colors.white} size="small" /> : (
-                  <><Ionicons name="refresh-outline" size={16} color={colors.white} /><Text style={s.loadMoreText}>Load More Results</Text></>
-                )}
+                {loadingMore
+                  ? <ActivityIndicator color={colors.white} size="small" />
+                  : <><Ionicons name="refresh-outline" size={16} color={colors.white} /><Text style={s.loadMoreText}>Load More Results</Text></>
+                }
               </TouchableOpacity>
             ) : null
           }
@@ -562,71 +657,137 @@ export default function DiscoverScreen() {
   );
 }
 
+// ─── StyleSheet ────────────────────────────────────────────────────────────────
+
+/** Ghost card styles */
+const g = StyleSheet.create({
+  card: {
+    borderRadius: 10, overflow: 'hidden',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
+    aspectRatio: 2 / 3, position: 'relative',
+  },
+  cardBody: {
+    position: 'absolute', inset: 0,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+  },
+  matchBadge: {
+    position: 'absolute', top: 5, left: 5,
+    backgroundColor: 'rgba(229,9,20,0.85)',
+    borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2,
+  },
+  matchText: { color: '#fff', fontSize: 8, fontWeight: '700' },
+  ratingBadge: {
+    position: 'absolute', top: 5, right: 5,
+    backgroundColor: 'rgba(245,197,24,0.2)',
+    borderWidth: 1, borderColor: 'rgba(245,197,24,0.4)',
+    borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2,
+  },
+  ratingText: { color: '#f5c518', fontSize: 8, fontWeight: '700' },
+  genreTag: {
+    position: 'absolute', bottom: 22, left: 5,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2,
+  },
+  genreText: { color: 'rgba(255,255,255,0.6)', fontSize: 8, fontWeight: '500' },
+  titleLine: {
+    position: 'absolute', bottom: 8, left: 6, right: 6,
+    height: 6, borderRadius: 3,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+  },
+});
+
+/** PremiumPicksSection styles */
+const p = StyleSheet.create({
+  wrapper: { paddingBottom: 30 },
+  header: {
+    flexDirection: 'row', justifyContent: 'space-between',
+    alignItems: 'center', marginBottom: 10,
+  },
+  headerTitle: { fontSize: 13, fontWeight: '600', color: 'rgba(255,255,255,0.88)' },
+  headerSub: { fontSize: 11, color: 'rgba(255,255,255,0.3)', marginTop: 2 },
+  aiBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1, borderColor: 'rgba(200,50,50,0.4)',
+    borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4,
+  },
+  aiStar: { fontSize: 10, color: '#e05050' },
+  aiBadgeText: { color: '#fff', fontSize: 11, fontWeight: '600' },
+  divider: { height: 1, backgroundColor: 'rgba(255,255,255,0.06)', marginBottom: 14 },
+  gridContainer: { position: 'relative' },
+  ghostGrid: {
+    flexDirection: 'row', flexWrap: 'wrap', gap: 7,
+    opacity: 0.35,
+  },
+  overlay: {
+    position: 'absolute', inset: 0,
+    backgroundColor: 'rgba(13,2,4,0.80)',
+    borderRadius: 14,
+    alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 24, paddingHorizontal: 20,
+    gap: 10,
+  },
+  lockCircle: {
+    width: 48, height: 48, borderRadius: 24,
+    backgroundColor: 'rgba(229,9,20,0.12)',
+    borderWidth: 1.5, borderColor: 'rgba(229,9,20,0.45)',
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: 2,
+  },
+  overlayTitle: {
+    fontSize: 16, fontWeight: '700', color: '#fff',
+    textAlign: 'center', lineHeight: 22,
+  },
+  overlaySub: {
+    fontSize: 12, color: 'rgba(255,255,255,0.42)',
+    textAlign: 'center', lineHeight: 18, maxWidth: 230,
+  },
+  unlockBtn: { borderRadius: 12, overflow: 'hidden', marginTop: 4 },
+  unlockGradient: {
+    flexDirection: 'row', alignItems: 'center', gap: 7,
+    paddingHorizontal: 24, paddingVertical: 12,
+  },
+  unlockStar: { color: '#fff', fontSize: 12 },
+  unlockText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  perks: { gap: 6, marginTop: 4, alignSelf: 'flex-start', paddingLeft: 16 },
+  perkRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  perkDot: {
+    width: 5, height: 5, borderRadius: 3,
+    backgroundColor: 'rgba(229,9,20,0.7)',
+  },
+  perkText: { color: 'rgba(255,255,255,0.45)', fontSize: 11 },
+});
+
+/** Main screen styles (unchanged from original) */
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0d0204' },
-  topGlow: {
-    position: 'absolute', top: 0, left: 0, right: 0, height: 420, zIndex: 0,
-  },
-  sideGlow: {
-    position: 'absolute', top: 0, left: -SCREEN_W * 0.2, width: SCREEN_W * 0.6, height: 300, zIndex: 0,
-  },
+  topGlow: { position: 'absolute', top: 0, left: 0, right: 0, height: 420, zIndex: 0 },
+  sideGlow: { position: 'absolute', top: 0, left: -SCREEN_W * 0.2, width: SCREEN_W * 0.6, height: 300, zIndex: 0 },
   fixedContent: { paddingHorizontal: 22 },
   trendingScroll: { flex: 1, paddingHorizontal: 22 },
   trendingScrollContent: { paddingBottom: 120 },
-  topBarWrap: {
-    paddingHorizontal: 22,
-    paddingBottom: 10,
-    zIndex: 10,
-  },
+  topBarWrap: { paddingHorizontal: 22, paddingBottom: 10, zIndex: 10 },
   topBarRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   topBarLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1, marginRight: 10 },
-  topAvatarInner: {
-    width: 30, height: 30, borderRadius: 15,
-    alignItems: 'center', justifyContent: 'center',
-  },
+  topAvatarInner: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
   topAvatarText: { color: colors.white, fontWeight: '700', fontSize: 15 },
   topWelcome: { color: 'rgba(255,255,255,0.5)', fontSize: 10, letterSpacing: 1.2, textTransform: 'uppercase' },
   topName: { color: colors.white, fontWeight: '600', fontSize: 14, flexShrink: 1 },
   topBarRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  aiPill: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: 1, borderColor: 'rgba(200,50,50,0.4)',
-  },
+  aiPill: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(200,50,50,0.4)' },
   aiStar: { fontSize: 11, color: '#e05050' },
   topChipTextRed: { color: colors.white, fontSize: 12, fontWeight: '600' },
-  streakPill: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    paddingHorizontal: 11, paddingVertical: 5, borderRadius: 20,
-    backgroundColor: 'rgba(255,200,0,0.08)',
-    borderWidth: 1, borderColor: 'rgba(255,180,0,0.3)',
-  },
-  streakPillLow: {
-    backgroundColor: 'rgba(229,9,20,0.1)',
-    borderColor: 'rgba(229,9,20,0.4)',
-  },
+  streakPill: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 11, paddingVertical: 5, borderRadius: 20, backgroundColor: 'rgba(255,200,0,0.08)', borderWidth: 1, borderColor: 'rgba(255,180,0,0.3)' },
+  streakPillLow: { backgroundColor: 'rgba(229,9,20,0.1)', borderColor: 'rgba(229,9,20,0.4)' },
   topChipTextGold: { color: colors.gold, fontSize: 12, fontWeight: '700' },
-  bellBtn: {
-    width: 34, height: 34, borderRadius: 17,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)',
-    alignItems: 'center', justifyContent: 'center',
-    position: 'relative',
-  },
+  bellBtn: { width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center', position: 'relative' },
   topBellDot: { position: 'absolute', top: 4, right: 4, width: 7, height: 7, borderRadius: 4, backgroundColor: colors.red },
-
-  // Hero
   heroSection: { marginTop: 28, marginBottom: 20 },
-  heroLabel: {
-    fontSize: 11, letterSpacing: 3, textTransform: 'uppercase',
-    color: 'rgba(200,60,60,0.8)', fontWeight: '600', marginBottom: 8,
-  },
+  heroLabel: { fontSize: 11, letterSpacing: 3, textTransform: 'uppercase', color: 'rgba(200,60,60,0.8)', fontWeight: '600', marginBottom: 8 },
   heroTitle: { fontSize: 36, fontWeight: '700', color: colors.white, letterSpacing: -0.5, lineHeight: 40 },
   heroAccent: { fontSize: 38, fontWeight: '800', color: '#e8403a', letterSpacing: -1, lineHeight: 44 },
   heroSub: { color: 'rgba(255,255,255,0.4)', fontSize: 13.5, lineHeight: 21, marginTop: 10, maxWidth: 280 },
-
-  // AI Toggle
   aiToggle: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 },
   aiToggleTrack: { width: 44, height: 24, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.1)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)', justifyContent: 'center', paddingHorizontal: 2 },
   aiToggleTrackActive: { backgroundColor: 'rgba(229,9,20,0.3)', borderColor: 'rgba(229,9,20,0.5)' },
@@ -634,74 +795,25 @@ const s = StyleSheet.create({
   aiToggleThumbActive: { backgroundColor: colors.red, alignSelf: 'flex-end' },
   aiToggleLabel: { color: colors.subtle, fontSize: 13, fontWeight: '600' },
   aiToggleLabelActive: { color: colors.red },
-
-  // Search
   searchRow: { flexDirection: 'row', gap: 10, width: '100%', marginBottom: 12 },
-  inputWrap: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 16, paddingHorizontal: 16, height: 50,
-  },
+  inputWrap: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', borderRadius: 16, paddingHorizontal: 16, height: 50 },
   searchIconEmoji: { color: 'rgba(255,255,255,0.35)', fontSize: 16 },
-  input: {
-    flex: 1, fontSize: 14, color: colors.white, padding: 0,
-  },
-  searchBtn: {
-    height: 50, width: 58, borderRadius: 16,
-    alignItems: 'center', justifyContent: 'center',
-    shadowColor: 'rgba(200,40,40,0.45)', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 1, shadowRadius: 20, elevation: 8,
-  },
+  input: { flex: 1, fontSize: 14, color: colors.white, padding: 0 },
+  searchBtn: { height: 50, width: 58, borderRadius: 16, alignItems: 'center', justifyContent: 'center', shadowColor: 'rgba(200,40,40,0.45)', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 1, shadowRadius: 20, elevation: 8 },
   playIcon: { color: colors.white, fontSize: 20 },
-
-  // Credit banner
-  creditBanner: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: 'rgba(255,200,0,0.08)', borderWidth: 1, borderColor: 'rgba(255,180,0,0.2)',
-    borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 12,
-  },
+  creditBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(255,200,0,0.08)', borderWidth: 1, borderColor: 'rgba(255,180,0,0.2)', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 12 },
   creditBannerText: { color: colors.gold, fontSize: 12, fontWeight: '600', flex: 1 },
-
-  // Filters
   filterRow: { flexDirection: 'row', gap: 8, marginBottom: 20, alignItems: 'center', width: '100%', zIndex: 99 },
-  pill: {
-    paddingHorizontal: 16, paddingVertical: 6, borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.07)',
-    flexDirection: 'row', alignItems: 'center',
-  },
+  pill: { paddingHorizontal: 16, paddingVertical: 6, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.07)', flexDirection: 'row', alignItems: 'center' },
   pillActive: { backgroundColor: '#c0392b', shadowColor: 'rgba(192,57,43,0.4)', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 1, shadowRadius: 12, elevation: 6 },
   pillText: { color: 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: '600' },
   pillTextActive: { color: colors.white },
   ratingPillActive: { borderColor: 'rgba(255,255,255,0.12)', backgroundColor: 'transparent' },
-  dropdown: {
-    position: 'absolute', top: 40, right: 0, zIndex: 999,
-    backgroundColor: '#1a1a1a', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)',
-    borderRadius: 10, paddingVertical: 4, minWidth: 120,
-    shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.4, shadowRadius: 8, elevation: 8,
-  },
+  dropdown: { position: 'absolute', top: 40, right: 0, zIndex: 999, backgroundColor: '#1a1a1a', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', borderRadius: 10, paddingVertical: 4, minWidth: 120, shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.4, shadowRadius: 8, elevation: 8 },
   dropItem: { paddingHorizontal: 14, paddingVertical: 10 },
   dropItemActive: { backgroundColor: 'rgba(245,197,24,0.08)' },
   dropItemText: { color: colors.text, fontSize: 13, fontWeight: '600' },
-
-  // Trending
-  trendingHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
-  trendingTitle: { fontSize: 13, fontWeight: '600', color: 'rgba(255,255,255,0.88)' },
-  trendingSub: { fontSize: 11, color: 'rgba(255,255,255,0.28)', fontWeight: '500' },
-  divider: { height: 1, backgroundColor: 'rgba(255,255,255,0.06)', marginTop: 10, marginBottom: 2 },
-  eItem: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)' },
-  eNum: { fontSize: 11, fontWeight: '700', color: 'rgba(255,255,255,0.16)', width: 18, letterSpacing: 0.5 },
-  eNumTop: { color: colors.red },
-  eTextWrap: { flex: 1, gap: 2 },
-  eText: { fontSize: 14, color: 'rgba(255,255,255,0.82)', fontWeight: '500' },
-  eMeta: { fontSize: 11, color: 'rgba(255,255,255,0.28)' },
-  eBadgeHot: { fontSize: 9, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 4, overflow: 'hidden', backgroundColor: 'rgba(192,57,43,0.15)', color: 'rgba(220,100,80,0.95)', fontWeight: '700', letterSpacing: 0.8 },
-  eBadgeNew: { fontSize: 9, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 4, overflow: 'hidden', backgroundColor: 'rgba(255,200,0,0.10)', color: 'rgba(245,197,24,0.85)', fontWeight: '700', letterSpacing: 0.8 },
-  eArrow: { fontSize: 18, color: 'rgba(255,255,255,0.16)' },
-  ratingPill: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    marginLeft: 'auto', paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20,
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', backgroundColor: 'transparent',
-  },
+  ratingPill: { flexDirection: 'row', alignItems: 'center', gap: 5, marginLeft: 'auto', paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', backgroundColor: 'transparent' },
   topBar: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingVertical: 10, alignItems: 'center' },
   backBtn: { padding: 8 },
   resultCount: { color: colors.subtle, fontSize: 12, fontWeight: '600', marginLeft: 'auto' },
@@ -715,17 +827,11 @@ const s = StyleSheet.create({
   emptyText: { color: colors.subtle, fontSize: 14 },
   retryBtn: { backgroundColor: colors.red, borderRadius: 8, paddingHorizontal: 20, paddingVertical: 10, marginTop: 8 },
   retryText: { color: colors.white, fontWeight: '700', fontSize: 14 },
-  loadMoreBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    backgroundColor: 'rgba(229,9,20,0.15)', borderWidth: 1, borderColor: 'rgba(229,9,20,0.3)',
-    borderRadius: 12, paddingVertical: 14, marginTop: 16, marginBottom: 20,
-  },
+  loadMoreBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: 'rgba(229,9,20,0.15)', borderWidth: 1, borderColor: 'rgba(229,9,20,0.3)', borderRadius: 12, paddingVertical: 14, marginTop: 16, marginBottom: 20 },
   loadMoreText: { color: colors.white, fontSize: 14, fontWeight: '700' },
-  // Search history
   historyDropdown: { width: '100%', backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', borderTopWidth: 0, borderBottomLeftRadius: 12, borderBottomRightRadius: 12, marginTop: -12, paddingTop: 4, marginBottom: 16 },
   historyItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 12, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.05)' },
   historyText: { color: colors.muted, fontSize: 14, fontWeight: '500' },
-  // Notifications modal
   notifModal: { flex: 1, backgroundColor: colors.dark },
   notifHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 16, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.07)' },
   notifTitle: { color: colors.white, fontSize: 17, fontWeight: '700' },

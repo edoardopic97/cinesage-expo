@@ -151,6 +151,15 @@ function CriticFrame({ children, size, active }: { children: React.ReactNode; si
   const cwRotation  = useRotation(10000, 1, active);
   const ccwRotation = useRotation(18000, -1, active);
 
+  const R1 = 55;
+  const R2 = 45;
+  const C1 = 2 * Math.PI * R1;
+  const C2 = 2 * Math.PI * R2;
+  const s1 = parseFloat((C1 / 4 * 0.82).toFixed(2));
+  const g1 = parseFloat((C1 / 4 - s1).toFixed(2));
+  const s2 = parseFloat((C2 / 6 * 0.6).toFixed(2));
+  const g2 = parseFloat((C2 / 6 - s2).toFixed(2));
+
   return (
     <View style={{ width: s.container, height: s.container, alignItems: 'center', justifyContent: 'center' }}>
       <View style={{
@@ -161,6 +170,14 @@ function CriticFrame({ children, size, active }: { children: React.ReactNode; si
         shadowRadius: size === 'small' ? 10 : 20, shadowOpacity: 0.2, elevation: 6,
       }} />
       <Svg width={s.container} height={s.container} viewBox="0 0 140 140" style={{ position: 'absolute' }}>
+        <Defs>
+          <RadialGradient id="criticCoreFill" cx="50%" cy="50%" r="50%">
+            <Stop offset="0%"   stopColor="#ffd700" stopOpacity={0.08} />
+            <Stop offset="60%"  stopColor="#cc9900" stopOpacity={0.03} />
+            <Stop offset="100%" stopColor="#000000" stopOpacity={0} />
+          </RadialGradient>
+        </Defs>
+        <Circle cx={70} cy={70} r={54} fill="url(#criticCoreFill)" />
         <Circle cx={70} cy={70} r={60} stroke="#5a4800" strokeWidth={1} opacity={0.2} fill="none" />
         <Circle cx={70} cy={70} r={50} stroke="#7a6a00" strokeWidth={0.75} opacity={0.3} fill="none" />
       </Svg>
@@ -173,10 +190,14 @@ function CriticFrame({ children, size, active }: { children: React.ReactNode; si
               <Stop offset="100%" stopColor="#cc9900" />
             </LinearGradient>
           </Defs>
-          <Path d="M70,15 A55,55 0 0,1 125,70" stroke="url(#gold-grad-o)" strokeWidth={size === 'small' ? 3 : 5} strokeLinecap="round" fill="none" />
-          <Path d="M125,70 A55,55 0 0,1 70,125" stroke="url(#gold-grad-o)" strokeWidth={size === 'small' ? 3 : 5} strokeLinecap="round" fill="none" />
-          <Path d="M70,125 A55,55 0 0,1 15,70"  stroke="url(#gold-grad-o)" strokeWidth={size === 'small' ? 3 : 5} strokeLinecap="round" fill="none" />
-          <Path d="M15,70 A55,55 0 0,1 70,15"   stroke="url(#gold-grad-o)" strokeWidth={size === 'small' ? 3 : 5} strokeLinecap="round" fill="none" />
+          <Circle
+            cx={70} cy={70} r={R1}
+            stroke="url(#gold-grad-o)"
+            strokeWidth={size === 'small' ? 3 : 5}
+            fill="none"
+            strokeDasharray={`${s1} ${g1}`}
+            strokeLinecap="round"
+          />
         </Svg>
       </Animated.View>
       {size !== 'small' && (
@@ -189,12 +210,15 @@ function CriticFrame({ children, size, active }: { children: React.ReactNode; si
                 <Stop offset="100%" stopColor="#cc9900" />
               </LinearGradient>
             </Defs>
-            <G opacity={0.7}>
-              <Path d="M70,25 A45,45 0 0,1 110,110" stroke="url(#gold-grad-i)" strokeWidth={2} strokeLinecap="round" fill="none" />
-              <Path d="M110,110 A45,45 0 0,1 30,110" stroke="url(#gold-grad-i)" strokeWidth={2} strokeLinecap="round" fill="none" />
-              <Path d="M30,110 A45,45 0 0,1 30,30"   stroke="url(#gold-grad-i)" strokeWidth={2} strokeLinecap="round" fill="none" />
-              <Path d="M30,30 A45,45 0 0,1 110,30"   stroke="url(#gold-grad-i)" strokeWidth={2} strokeLinecap="round" fill="none" />
-            </G>
+            <Circle
+              cx={70} cy={70} r={R2}
+              stroke="url(#gold-grad-i)"
+              strokeWidth={2}
+              fill="none"
+              strokeDasharray={`${s2} ${g2}`}
+              strokeLinecap="round"
+              opacity={0.7}
+            />
           </Svg>
         </Animated.View>
       )}
