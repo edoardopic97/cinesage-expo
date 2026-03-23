@@ -1,8 +1,8 @@
 {
   "expo": {
-    "name": "CineSage",
+    "name": "Cinelyse",
     "slug": "cinesage",
-    "scheme": "cinesage",
+    "scheme": "cinelyse",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -14,7 +14,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.cinesage.app"
+      "bundleIdentifier": "com.cinelyse.app"
     },
     "android": {
       "adaptiveIcon": {
@@ -23,13 +23,13 @@
         "monochromeImage": "./assets/android-icon-monochrome.png",
         "backgroundColor": "#0a0a0a"
       },
-      "package": "com.cinesage.app",
+      "package": "com.cinelyse.app",
       "intentFilters": [
         {
           "action": "VIEW",
           "autoVerify": true,
           "data": [
-            { "scheme": "https", "host": "cinesage-api.vercel.app", "pathPrefix": "/movie" }
+            { "scheme": "https", "host": "cinelyse-api.vercel.app", "pathPrefix": "/movie" }
           ],
           "category": ["BROWSABLE", "DEFAULT"]
         }
@@ -40,9 +40,17 @@
       [
         "expo-contacts",
         {
-          "contactsPermission": "CineSage needs access to your contacts to find friends who are already using the app."
+          "contactsPermission": "Cinelyse needs access to your contacts to find friends who are already using the app."
         }
-      ]
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#E50914"
+        }
+      ],
+      "@react-native-google-signin/google-signin"
     ],
     "extra": {
       "eas": {

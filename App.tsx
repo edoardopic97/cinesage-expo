@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import * as Notifications from 'expo-notifications';
 import { AuthProvider } from './src/contexts/AuthContext';
 import RootNavigator from './src/navigation/RootNavigator';
 
@@ -39,6 +40,18 @@ const eb = StyleSheet.create({
 });
 
 export default function App() {
+  const notificationListener = useRef<Notifications.EventSubscription>();
+  const responseListener = useRef<Notifications.EventSubscription>();
+
+  useEffect(() => {
+    notificationListener.current = Notifications.addNotificationReceivedListener(() => {});
+    responseListener.current = Notifications.addNotificationResponseReceivedListener(() => {});
+    return () => {
+      notificationListener.current?.remove();
+      responseListener.current?.remove();
+    };
+  }, []);
+
   return (
     <ErrorBoundary>
       <GestureHandlerRootView style={{ flex: 1 }}>

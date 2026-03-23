@@ -1,6 +1,7 @@
 import axios from 'axios';
 
-const API_BASE = 'https://cinesage-api.vercel.app';
+const API_BASE = 'https://cinelyse-api.vercel.app';
+const OMDB_KEY = '2ff93aac';
 
 const api = axios.create({
   baseURL: API_BASE,
@@ -40,14 +41,15 @@ export async function searchMovies(
   query: string,
   category: 'movie' | 'tv' | 'all' = 'all',
   uid?: string,
-  exclude?: string[]
+  exclude?: string[],
+  aiMode: boolean = true
 ): Promise<SearchResponse> {
   let enrichedQuery = query;
   if (exclude?.length) {
     enrichedQuery += `. Do NOT include any of these titles I already have: ${exclude.join(', ')}`;
   }
   const res = await api.post('/api/trpc/movies.search', {
-    json: { query: enrichedQuery, category, uid: uid || null },
+    json: { query: enrichedQuery, category, uid: uid || null, aiMode },
   });
 
   // tRPC batch response: [{result:{data:{json:{...}}}}]
@@ -63,3 +65,41 @@ export async function searchMovies(
 }
 
 export default api;
+
+export async function searchByTitle(query: string): Promise<MovieResult[]> {
+  const res = await axios.get('https://www.omdbapi.com/', {
+    params: { apikey: OMDB_KEY, s: query },
+  });
+  if (res.data?.Response !== 'True' || !res.data.Search) return [];
+  // Fetch full details for each result
+  const details = await Promise.all(
+    res.data.Search.slice(0, 10).map(async (m: any) => {
+      try {
+        const d = await axios.get('https://www.omdbapi.com/', {
+          params: { apikey: OMDB_KEY, i: m.imdbID },
+        });
+        if (d.data?.Response !== 'True') return null;
+        const r = d.data;
+        return {
+          Title: r.Title,
+          Year: r.Year,
+          Poster: r.Poster !== 'N/A' ? r.Poster : '',
+          Genre: r.Genre !== 'N/A' ? r.Genre : '',
+          Plot: r.Plot !== 'N/A' ? r.Plot : '',
+          imdbRating: r.imdbRating !== 'N/A' ? r.imdbRating : '',
+          Runtime: r.Runtime !== 'N/A' ? r.Runtime : undefined,
+          Country: r.Country !== 'N/A' ? r.Country : undefined,
+          Type: r.Type,
+          Director: r.Director !== 'N/A' ? r.Director : undefined,
+          Actors: r.Actors !== 'N/A' ? r.Actors : undefined,
+          Language: r.Language !== 'N/A' ? r.Language : undefined,
+          Awards: r.Awards !== 'N/A' ? r.Awards : undefined,
+          imdbID: r.imdbID,
+          Rated: r.Rated !== 'N/A' ? r.Rated : undefined,
+          Ratings: r.Ratings,
+        } as MovieResult;
+      } catch { return null; }
+    })
+  );
+  return details.filter(Boolean) as MovieResult[];
+}

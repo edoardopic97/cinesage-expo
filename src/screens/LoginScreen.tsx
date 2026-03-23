@@ -7,17 +7,17 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, sendEmailVerification } from 'firebase/auth';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, sendEmailVerification, GoogleAuthProvider, signInWithCredential } from 'firebase/auth';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { auth } from '../lib/firebase';
-import { setUserProfile, checkUsernameExists } from '../lib/firestore';
+import { setUserProfile, checkUsernameExists, getUserProfile } from '../lib/firestore';
+import { registerForPushNotifications } from '../lib/notifications';
 import { colors } from '../theme/colors';
 
-const FEATURES = [
-  { icon: 'sparkles', color: colors.red, title: 'AI-Powered Search', desc: 'Describe any mood or vibe and find the perfect film' },
-  { icon: 'star', color: colors.gold, title: 'Track & Rate', desc: 'Build your watched list and rate every movie you see' },
-  { icon: 'bookmark', color: '#60a5fa', title: 'Watchlist', desc: 'Save films to watch later, never forget a recommendation' },
-  { icon: 'people', color: '#4ade80', title: 'Social Discovery', desc: 'Connect with friends and share your favourite picks' },
-];
+GoogleSignin.configure({
+  webClientId: '226486672662-7hl37cks66rl2o37cv1cja6uveg4sl5m.apps.googleusercontent.com',
+});
+
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
@@ -29,6 +29,9 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [splashDone, setSplashDone] = useState(false);
+
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const [marketingOptIn, setMarketingOptIn] = useState(false);
 
   const logoScale = useRef(new Animated.Value(0.3)).current;
   const logoOpacity = useRef(new Animated.Value(0)).current;
@@ -59,6 +62,36 @@ export default function LoginScreen() {
     return 'Something went wrong. Please try again';
   };
 
+  const handleGoogleSignIn = async () => {
+    setGoogleLoading(true);
+    try {
+      await GoogleSignin.hasPlayServices();
+      const response = await GoogleSignin.signIn();
+      const idToken = response.data?.idToken;
+      if (!idToken) throw new Error('No ID token returned');
+      const credential = GoogleAuthProvider.credential(idToken);
+      const cred = await signInWithCredential(auth, credential);
+      // Create profile if first time
+      const existing = await getUserProfile(cred.user.uid);
+      if (!existing) {
+        const name = cred.user.displayName || cred.user.email?.split('@')[0] || 'User';
+        await setUserProfile(cred.user.uid, {
+          email: cred.user.email || '',
+          displayName: name,
+          photoURL: cred.user.photoURL || undefined,
+          marketingOptIn,
+        });
+      }
+      registerForPushNotifications(cred.user.uid).catch(() => {});
+    } catch (err: any) {
+      if (err.code !== 'SIGN_IN_CANCELLED') {
+        Alert.alert('Error', err.message || 'Google sign-in failed');
+      }
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
+
   const handleAuth = async () => {
     if (!email.trim() || !password.trim()) {
       Alert.alert('Error', 'Please enter email and password');
@@ -73,11 +106,13 @@ export default function LoginScreen() {
         const exists = await checkUsernameExists(username);
         if (exists) { Alert.alert('Error', 'Username already taken'); setLoading(false); return; }
         const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
-        await setUserProfile(cred.user.uid, { email: email.trim(), displayName: username.trim() });
+        await setUserProfile(cred.user.uid, { email: email.trim(), displayName: username.trim(), marketingOptIn });
         await sendEmailVerification(cred.user);
+        registerForPushNotifications(cred.user.uid).catch(() => {});
         Alert.alert('Check your email 📧', 'We sent a verification link to your email. Please verify to continue.');
       } else {
         const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
+        registerForPushNotifications(cred.user.uid).catch(() => {});
         if (!cred.user.emailVerified) {
           Alert.alert('Verify your email', 'Please check your inbox for the verification link we sent when you signed up.');
         }
@@ -94,29 +129,13 @@ export default function LoginScreen() {
       <LinearGradient colors={['#0d0d0d', '#1a0505', '#0a0a0a']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
       <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
         <Animated.View style={{ opacity: logoOpacity, transform: [{ scale: logoScale }] }}>
-          <Text style={s.logo}>Cine<Text style={s.logoAccent}>Sage</Text></Text>
+          <Text style={s.logo}>CINE<Text style={s.logoAccent}>LYSE</Text></Text>
           <Text style={s.tagline}>Your AI-powered movie companion</Text>
         </Animated.View>
 
         <Animated.View style={{ opacity: contentOpacity, width: '100%' }}>
 
-        <View style={s.features}>
-          {FEATURES.map((f, i) => (
-            <View key={i} style={s.featureRow}>
-              <View style={s.featureIcon}>
-                <Ionicons name={f.icon as any} size={16} color={f.color} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={s.featureTitle}>{f.title}</Text>
-                <Text style={s.featureDesc}>{f.desc}</Text>
-              </View>
-            </View>
-          ))}
-        </View>
-
         <View style={s.form}>
-          <Text style={s.formTitle}>{isSignUp ? 'Create account' : 'Welcome back'}</Text>
-          <Text style={s.formSub}>{isSignUp ? 'Join CineSage and start discovering great films' : 'Sign in to continue your movie journey'}</Text>
 
           {isSignUp && (
             <View style={s.fieldWrap}>
@@ -197,11 +216,35 @@ export default function LoginScreen() {
             )}
           </TouchableOpacity>
 
+          <TouchableOpacity style={s.checkboxRow} onPress={() => setMarketingOptIn(!marketingOptIn)} activeOpacity={0.7}>
+            <View style={[s.checkbox, marketingOptIn && s.checkboxActive]}>
+              {marketingOptIn && <Ionicons name="checkmark" size={14} color={colors.white} />}
+            </View>
+            <Text style={s.checkboxText}>I'd like to receive updates, tips and offers from CINELYSE</Text>
+          </TouchableOpacity>
+
           <TouchableOpacity onPress={() => { setIsSignUp(!isSignUp); setConfirmPassword(''); }} style={s.toggle}>
             <Text style={s.toggleText}>
               {isSignUp ? 'Already have an account? ' : "Don't have an account? "}
               <Text style={s.toggleAccent}>{isSignUp ? 'Sign in' : 'Sign up free'}</Text>
             </Text>
+          </TouchableOpacity>
+
+          <View style={s.divider}>
+            <View style={s.dividerLine} />
+            <Text style={s.dividerText}>OR</Text>
+            <View style={s.dividerLine} />
+          </View>
+
+          <TouchableOpacity style={s.googleBtn} onPress={handleGoogleSignIn} disabled={googleLoading} activeOpacity={0.8}>
+            {googleLoading ? (
+              <ActivityIndicator color={colors.white} />
+            ) : (
+              <View style={s.btnInner}>
+                <Ionicons name="logo-google" size={18} color={colors.white} />
+                <Text style={s.googleBtnText}>Continue with Google</Text>
+              </View>
+            )}
           </TouchableOpacity>
         </View>
         </Animated.View>
@@ -215,19 +258,8 @@ const s = StyleSheet.create({
   scroll: { flexGrow: 1, padding: 24, paddingBottom: 40 },
   logo: { fontSize: 42, fontWeight: '900', color: colors.white, letterSpacing: -1, textAlign: 'center' },
   logoAccent: { color: colors.red },
-  tagline: { color: colors.muted, fontSize: 14, textAlign: 'center', marginTop: 6, marginBottom: 32 },
-  features: { marginBottom: 32, gap: 14 },
-  featureRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
-  featureIcon: {
-    width: 36, height: 36, borderRadius: 10,
-    backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  featureTitle: { color: colors.text, fontWeight: '700', fontSize: 14, marginBottom: 2 },
-  featureDesc: { color: colors.subtle, fontSize: 12, lineHeight: 18 },
-  form: { gap: 14 },
-  formTitle: { color: colors.white, fontSize: 24, fontWeight: '900', letterSpacing: -0.5 },
-  formSub: { color: colors.subtle, fontSize: 14, marginBottom: 8 },
+  tagline: { color: colors.muted, fontSize: 14, textAlign: 'center', marginTop: 6, marginBottom: 20 },
+  form: { gap: 12 },
   fieldWrap: { gap: 6 },
   label: { color: colors.muted, fontSize: 11, fontWeight: '700', letterSpacing: 0.8 },
   inputWrap: { position: 'relative' },
@@ -243,7 +275,19 @@ const s = StyleSheet.create({
   },
   btnInner: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   btnText: { color: colors.white, fontSize: 16, fontWeight: '700' },
-  toggle: { alignItems: 'center', marginTop: 16 },
+  toggle: { alignItems: 'center', marginTop: 8 },
   toggleText: { color: colors.muted, fontSize: 14 },
   toggleAccent: { color: colors.red, fontWeight: '700' },
+  divider: { flexDirection: 'row', alignItems: 'center', marginTop: 12, marginBottom: 4 },
+  dividerLine: { flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.1)' },
+  dividerText: { color: colors.subtle, fontSize: 12, fontWeight: '600', marginHorizontal: 12 },
+  googleBtn: {
+    backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 10, padding: 16, alignItems: 'center',
+  },
+  googleBtnText: { color: colors.white, fontSize: 16, fontWeight: '700' },
+  checkboxRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginTop: 4 },
+  checkbox: { width: 22, height: 22, borderRadius: 6, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.2)', backgroundColor: 'rgba(255,255,255,0.05)', alignItems: 'center', justifyContent: 'center', marginTop: 1 },
+  checkboxActive: { backgroundColor: colors.red, borderColor: colors.red },
+  checkboxText: { color: colors.subtle, fontSize: 12, lineHeight: 18, flex: 1 },
 });

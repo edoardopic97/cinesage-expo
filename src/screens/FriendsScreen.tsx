@@ -144,10 +144,19 @@ export default function FriendsScreen() {
     } finally { setSendingTo(null); }
   };
 
+  const [accepting, setAccepting] = useState<string | null>(null);
+
   const handleAccept = async (req: FriendRequest) => {
+    if (accepting) return;
+    setAccepting(req.id);
     setRequests(prev => prev.filter(r => r.id !== req.id));
-    await acceptFriendRequest(user!.uid, req.id, req.fromUserId);
-    loadData();
+    try {
+      await acceptFriendRequest(user!.uid, req.id, req.fromUserId);
+      await loadData();
+      setTab('friends');
+    } finally {
+      setAccepting(null);
+    }
   };
 
   const handleReject = async (req: FriendRequest) => {
@@ -336,7 +345,7 @@ export default function FriendsScreen() {
             <View style={s.empty}>
               <Ionicons name="people-outline" size={40} color="rgba(255,255,255,0.1)" />
               <Text style={s.emptyText}>No matches found</Text>
-              <Text style={s.emptySub}>None of your contacts are on CineSage yet.</Text>
+              <Text style={s.emptySub}>None of your contacts are on CINELYSE yet.</Text>
             </View>
           ) : (
             <FlatList

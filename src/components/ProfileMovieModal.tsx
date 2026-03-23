@@ -6,6 +6,7 @@ import { colors } from '../theme/colors';
 import { getGenreColor } from '../theme/genreColors';
 import { useAuth } from '../contexts/AuthContext';
 import { removeMovieFromWatched, removeMovieFromToWatch, removeMovieFromFavorites, setMovieActivity, type MovieActivity } from '../lib/firestore';
+import MovieActivityButtons, { type MovieData } from './MovieActivityButtons';
 
 interface Props {
   movie: MovieActivity | null;
@@ -39,7 +40,7 @@ export default function ProfileMovieModal({ movie, onClose, readOnly = false }: 
             <View style={s.titleRow}>
               <Text style={[s.title, { flex: 1 }]}>{movie.title}</Text>
               <TouchableOpacity style={s.shareBtn} onPress={() => {
-                const url = movie.movieId?.startsWith('tt') ? `https://cinesage-api.vercel.app/movie/${movie.movieId}` : '';
+                const url = movie.movieId?.startsWith('tt') ? `https://cinelyse-api.vercel.app/movie/${movie.movieId}` : '';
                 const lines = [`🎬 ${movie.title}${movie.year ? ` (${movie.year})` : ''}`];
                 if (imdbRating > 0) lines.push(`⭐ ${imdbRating.toFixed(1)} IMDb`);
                 if (genres.length) lines.push(genres.join(', '));
@@ -87,6 +88,30 @@ export default function ProfileMovieModal({ movie, onClose, readOnly = false }: 
               <TouchableOpacity style={s.imdbLink} onPress={() => Linking.openURL(`https://www.imdb.com/title/${movie.movieId}`)}>
                 <Ionicons name="open-outline" size={14} color={colors.gold} /><Text style={s.imdbText}>View on IMDb</Text>
               </TouchableOpacity>
+            )}
+
+            {readOnly && user?.uid && (
+              <View style={s.activitySection}>
+                <Text style={s.detailLabel}>Your Activity</Text>
+                <MovieActivityButtons movie={{
+                  movieId: movie.movieId,
+                  title: movie.title,
+                  poster: movie.poster,
+                  genres: movie.genres,
+                  year: movie.year,
+                  imdbRating: movie.imdbRating,
+                  plot: movie.plot,
+                  runtime: movie.runtime,
+                  director: movie.director,
+                  actors: movie.actors,
+                  language: movie.language,
+                  country: movie.country,
+                  rated: movie.rated,
+                  type: movie.type,
+                  awards: movie.awards,
+                  ratings: movie.ratings,
+                }} />
+              </View>
             )}
 
             {!readOnly && user?.uid && (movie.watched || movie.toWatch || movie.favorite) && (
@@ -188,6 +213,7 @@ const s = StyleSheet.create({
   yourRating: { borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.07)', paddingTop: 12, marginBottom: 12 },
   imdbLink: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 },
   imdbText: { color: colors.gold, fontSize: 13, fontWeight: '600' },
+  activitySection: { borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.07)', paddingTop: 16, marginTop: 16 },
   removeSection: { borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.07)', paddingTop: 16, marginTop: 16 },
   removeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
   removeBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,59,48,0.1)', borderWidth: 1, borderColor: 'rgba(255,59,48,0.3)', borderRadius: 8, paddingHorizontal: 14, paddingVertical: 10 },

@@ -94,7 +94,7 @@ export default function MovieCard({ movie, allMovies = [], currentIndex = 0 }: P
                 <Text style={[s.title, { flex: 1 }]}>{current.Title}</Text>
                 <TouchableOpacity style={s.shareBtn} onPress={() => {
                   const r = parseFloat(current.imdbRating || '0');
-                  const url = current.imdbID ? `https://cinesage-api.vercel.app/movie/${current.imdbID}` : '';
+                  const url = current.imdbID ? `https://cinelyse-api.vercel.app/movie/${current.imdbID}` : '';
                   const lines = [`🎬 ${current.Title}${current.Year ? ` (${current.Year})` : ''}`];
                   if (r > 0) lines.push(`⭐ ${r.toFixed(1)} IMDb`);
                   if (current.Genre && current.Genre !== 'N/A') lines.push(current.Genre);

@@ -22,7 +22,7 @@ export default function SharedMovieModal() {
   const metaScore = movie.Ratings?.find(r => r.Source === 'Metacritic')?.Value;
 
   const handleShare = () => {
-    const url = movie.imdbID ? `https://cinesage-api.vercel.app/movie/${movie.imdbID}` : '';
+    const url = movie.imdbID ? `https://cinelyse-api.vercel.app/movie/${movie.imdbID}` : '';
     const lines = [`🎬 ${movie.Title}${movie.Year ? ` (${movie.Year})` : ''}`];
     if (rating > 0) lines.push(`⭐ ${rating.toFixed(1)} IMDb`);
     if (movie.Genre) lines.push(movie.Genre);

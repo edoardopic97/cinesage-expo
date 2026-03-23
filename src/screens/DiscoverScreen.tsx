@@ -11,7 +11,7 @@ import { colors } from '../theme/colors';
 import { searchMovies, type MovieResult } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import { useCredits } from '../hooks/useCredits';
-import { getSearchCount } from '../lib/firestore';
+import { getSearchCount, acceptFriendRequest, rejectFriendRequest, deleteNotification } from '../lib/firestore';
 import ProfileRing, { getTier } from '../components/ProfileRing';
 
 import MovieCard from '../components/MovieCard';
@@ -51,11 +51,14 @@ export default function DiscoverScreen() {
   const [searchCount, setSearchCount] = useState(0);
   const [lastQuery, setLastQuery] = useState('');
   const [loadingMore, setLoadingMore] = useState(false);
+  const [aiMode, setAiMode] = useState(true);
 
   useEffect(() => {
     if (!user?.uid) return;
     getSearchCount(user.uid).then(setSearchCount).catch(() => {});
   }, [user?.uid]);
+
+  const [acceptingNotif, setAcceptingNotif] = useState<string | null>(null);
 
   // Real-time notifications
   useEffect(() => {
@@ -94,10 +97,12 @@ export default function DiscoverScreen() {
     const searchQuery = (q || query).trim();
     if (!searchQuery) return;
 
-    const ok = await spend();
-    if (!ok) {
-      setError('No credits left today. Credits refresh daily!');
-      return;
+    if (aiMode) {
+      const ok = await spend();
+      if (!ok) {
+        setError('No credits left today. Credits refresh daily!');
+        return;
+      }
     }
 
     setError(null);
@@ -108,14 +113,30 @@ export default function DiscoverScreen() {
     setLastQuery(searchQuery);
     addToHistory(searchQuery);
 
-    // Build enriched prompt with filters for the LLM
+    if (!aiMode) {
+      try {
+        const res = await searchMovies(searchQuery, category, user?.uid, undefined, false);
+        const movies = res.movies || [];
+        setAllResults(movies);
+        setResults(movies);
+      } catch (err: any) {
+        setError(err?.message || 'Search failed');
+        setAllResults([]);
+        setResults([]);
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    // AI search
     let llmQuery = searchQuery;
     if (category === 'movie') llmQuery += ', only movies (no TV series)';
     else if (category === 'tv') llmQuery += ', only TV series (no movies)';
     if (minRating !== 'Any') llmQuery += `, minimum IMDb rating ${minRating}`;
 
     try {
-      const res = await searchMovies(llmQuery, category, user?.uid);
+      const res = await searchMovies(llmQuery, category, user?.uid, undefined, aiMode);
       const movies = res.movies || [];
       setAllResults(movies);
       setResults(movies);
@@ -144,7 +165,7 @@ export default function DiscoverScreen() {
     if (minRating !== 'Any') llmQuery += `, minimum IMDb rating ${minRating}`;
     const exclude = allResults.map(m => m.Title);
     try {
-      const res = await searchMovies(llmQuery, category, user?.uid, exclude);
+      const res = await searchMovies(llmQuery, category, user?.uid, exclude, aiMode);
       const movies = res.movies || [];
       const merged = [...allResults, ...movies];
       setAllResults(merged);
@@ -225,14 +246,18 @@ export default function DiscoverScreen() {
               </View>
             </View>
             <View style={s.topBarRight}>
-              <View style={s.aiPill}>
-                <Text style={s.aiStar}>✦</Text>
-                <Text style={s.topChipTextRed}>AI</Text>
-              </View>
-              <View style={s.streakPill}>
-                <Ionicons name="flash" size={12} color={credits > 0 ? colors.gold : colors.subtle} />
-                <Text style={[s.topChipTextGold, credits === 0 && { color: colors.subtle }]}>{credits === Infinity ? '∞' : credits}/{maxCredits === Infinity ? '∞' : maxCredits}</Text>
-              </View>
+              {aiMode && (
+                <>
+                  <View style={s.aiPill}>
+                    <Text style={s.aiStar}>✦</Text>
+                    <Text style={s.topChipTextRed}>AI</Text>
+                  </View>
+                  <View style={s.streakPill}>
+                    <Ionicons name="flash" size={12} color={credits > 0 ? colors.gold : colors.subtle} />
+                    <Text style={[s.topChipTextGold, credits === 0 && { color: colors.subtle }]}>{credits === Infinity ? '∞' : credits}/{maxCredits === Infinity ? '∞' : maxCredits}</Text>
+                  </View>
+                </>
+              )}
               <TouchableOpacity style={s.bellBtn} onPress={openNotifs}>
                 <Text style={{ fontSize: 15 }}>🔔</Text>
                 {notifications.filter(n => !n.read).length > 0 && <View style={s.topBellDot} />}
@@ -248,8 +273,16 @@ export default function DiscoverScreen() {
             <Text style={s.heroLabel}>🎬 Discover</Text>
             <Text style={s.heroTitle}>Find Your Next</Text>
             <Text style={s.heroAccent}>Favorite Show</Text>
-            <Text style={s.heroSub}>Describe any mood, genre, or vibe — our AI finds the perfect match for you.</Text>
+            <Text style={s.heroSub}>{aiMode ? 'Describe any mood, genre, or vibe — our AI finds the perfect match for you.' : 'Search by movie or TV show title to find what you\'re looking for.'}</Text>
           </View>
+
+          {/* AI Toggle */}
+          <TouchableOpacity style={s.aiToggle} onPress={() => setAiMode(!aiMode)} activeOpacity={0.7}>
+            <View style={[s.aiToggleTrack, aiMode && s.aiToggleTrackActive]}>
+              <View style={[s.aiToggleThumb, aiMode && s.aiToggleThumbActive]} />
+            </View>
+            <Text style={[s.aiToggleLabel, aiMode && s.aiToggleLabelActive]}>{aiMode ? 'AI Search' : 'Title Search'}</Text>
+          </TouchableOpacity>
 
           {/* Search */}
           <View style={s.searchRow}>
@@ -258,7 +291,7 @@ export default function DiscoverScreen() {
               <TextInput
                 ref={inputRef}
                 style={s.input}
-                placeholder='Try "dark thriller" or "90s"'
+                placeholder={aiMode ? 'Try "dark thriller" or "90s"' : 'Try "The Godfather" or "Seven"'}
                 placeholderTextColor={'rgba(255,255,255,0.35)'}
                 value={query}
                 onChangeText={setQuery}
@@ -278,12 +311,14 @@ export default function DiscoverScreen() {
           </View>
 
           {/* Filters */}
-          <View style={s.filterRow}>
-            <FilterPill label="All" value="all" />
-            <FilterPill label="Movies" value="movie" />
-            <FilterPill label="TV Series" value="tv" />
-            <RatingDropdown />
-          </View>
+          {aiMode && (
+            <View style={s.filterRow}>
+              <FilterPill label="All" value="all" />
+              <FilterPill label="Movies" value="movie" />
+              <FilterPill label="TV Series" value="tv" />
+              <RatingDropdown />
+            </View>
+          )}
 
           {/* Search history */}
           {showHistory && searchHistory.length > 0 && (
@@ -299,32 +334,36 @@ export default function DiscoverScreen() {
           )}
         </View>
 
-        {/* Scrollable trending */}
-        <ScrollView style={s.trendingScroll} contentContainerStyle={s.trendingScrollContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-          <View style={s.trendingHead}>
-            <Text style={s.trendingTitle}>Top searches today</Text>
-            <Text style={s.trendingSub}>Updated hourly</Text>
-          </View>
-          <View style={s.divider} />
-          {TRENDING.map((item, i) => (
-            <TouchableOpacity
-              key={item.label}
-              style={[s.eItem, i === TRENDING.length - 1 && { borderBottomWidth: 0 }]}
-              onPress={() => handleSearch(item.label)}
-            >
-              <Text style={[s.eNum, i < 3 && s.eNumTop]}>
-                {String(i + 1).padStart(2, '0')}
-              </Text>
-              <View style={s.eTextWrap}>
-                <Text style={s.eText}>{item.label}</Text>
-                <Text style={s.eMeta}>{item.meta}</Text>
-              </View>
-              {item.badge === 'hot' && <Text style={s.eBadgeHot}>HOT</Text>}
-              {item.badge === 'new' && <Text style={s.eBadgeNew}>NEW</Text>}
-              {item.badge === null && <Text style={s.eArrow}>›</Text>}
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+        {/* Scrollable trending (AI mode only) */}
+        {aiMode ? (
+          <ScrollView style={s.trendingScroll} contentContainerStyle={s.trendingScrollContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+            <View style={s.trendingHead}>
+              <Text style={s.trendingTitle}>Top searches today</Text>
+              <Text style={s.trendingSub}>Updated hourly</Text>
+            </View>
+            <View style={s.divider} />
+            {TRENDING.map((item, i) => (
+              <TouchableOpacity
+                key={item.label}
+                style={[s.eItem, i === TRENDING.length - 1 && { borderBottomWidth: 0 }]}
+                onPress={() => handleSearch(item.label)}
+              >
+                <Text style={[s.eNum, i < 3 && s.eNumTop]}>
+                  {String(i + 1).padStart(2, '0')}
+                </Text>
+                <View style={s.eTextWrap}>
+                  <Text style={s.eText}>{item.label}</Text>
+                  <Text style={s.eMeta}>{item.meta}</Text>
+                </View>
+                {item.badge === 'hot' && <Text style={s.eBadgeHot}>HOT</Text>}
+                {item.badge === 'new' && <Text style={s.eBadgeNew}>NEW</Text>}
+                {item.badge === null && <Text style={s.eArrow}>›</Text>}
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        ) : (
+          <View style={s.trendingScroll} />
+        )}
 
         <SharedMovieModal />
 
@@ -358,7 +397,57 @@ export default function DiscoverScreen() {
                     <Text style={s.notifText}>{item.message}</Text>
                     <Text style={s.notifTime}>{item.createdAt?.toDate?.()?.toLocaleDateString?.() || ''}</Text>
                   </View>
-                  {!item.read && <View style={s.notifDot} />}
+                  {item.type === 'friend_request' && item.fromUserId && item.requestId && !item.accepted && !item.rejected ? (
+                    <View style={{ flexDirection: 'row', gap: 6 }}>
+                      <TouchableOpacity
+                        style={s.notifAcceptBtn}
+                        disabled={acceptingNotif === item.id}
+                        onPress={async () => {
+                          if (acceptingNotif) return;
+                          setAcceptingNotif(item.id);
+                          try {
+                            await acceptFriendRequest(user!.uid, item.requestId, item.fromUserId);
+                            setNotifications(prev => prev.map(n => n.id === item.id ? { ...n, accepted: true } : n));
+                          } finally {
+                            setAcceptingNotif(null);
+                          }
+                        }}
+                      >
+                        <Ionicons name="checkmark" size={14} color="#4ade80" />
+                        <Text style={{ color: '#4ade80', fontSize: 11, fontWeight: '700' }}>Accept</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={s.notifRejectBtn}
+                        onPress={async () => {
+                          await rejectFriendRequest(user!.uid, item.requestId);
+                          setNotifications(prev => prev.map(n => n.id === item.id ? { ...n, rejected: true } : n));
+                        }}
+                      >
+                        <Ionicons name="close" size={14} color={colors.muted} />
+                      </TouchableOpacity>
+                    </View>
+                  ) : item.type === 'friend_request' && item.accepted ? (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <View style={s.notifAcceptedBadge}><Ionicons name="checkmark" size={13} color="#4ade80" /><Text style={{ color: '#4ade80', fontSize: 11, fontWeight: '700' }}>Friends</Text></View>
+                      <TouchableOpacity style={s.notifDeleteBtn} onPress={() => deleteNotification(user!.uid, item.id)}>
+                        <Ionicons name="trash-outline" size={14} color={colors.subtle} />
+                      </TouchableOpacity>
+                    </View>
+                  ) : item.type === 'friend_request' && item.rejected ? (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={{ color: colors.subtle, fontSize: 11 }}>Declined</Text>
+                      <TouchableOpacity style={s.notifDeleteBtn} onPress={() => deleteNotification(user!.uid, item.id)}>
+                        <Ionicons name="trash-outline" size={14} color={colors.subtle} />
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      {!item.read && <View style={s.notifDot} />}
+                      <TouchableOpacity style={s.notifDeleteBtn} onPress={() => deleteNotification(user!.uid, item.id)}>
+                        <Ionicons name="trash-outline" size={14} color={colors.subtle} />
+                      </TouchableOpacity>
+                    </View>
+                  )}
                 </View>
               )}
             />
@@ -436,7 +525,7 @@ export default function DiscoverScreen() {
             </View>
           }
           ListFooterComponent={
-            filteredResults.length > 0 ? (
+            aiMode && filteredResults.length > 0 ? (
               <TouchableOpacity style={s.loadMoreBtn} onPress={handleLoadMore} disabled={loadingMore} activeOpacity={0.8}>
                 {loadingMore ? <ActivityIndicator color={colors.white} size="small" /> : (
                   <><Ionicons name="refresh-outline" size={16} color={colors.white} /><Text style={s.loadMoreText}>Load More Results</Text></>
@@ -509,6 +598,15 @@ const s = StyleSheet.create({
   heroTitle: { fontSize: 36, fontWeight: '700', color: colors.white, letterSpacing: -0.5, lineHeight: 40 },
   heroAccent: { fontSize: 38, fontWeight: '800', color: '#e8403a', letterSpacing: -1, lineHeight: 44 },
   heroSub: { color: 'rgba(255,255,255,0.4)', fontSize: 13.5, lineHeight: 21, marginTop: 10, maxWidth: 280 },
+
+  // AI Toggle
+  aiToggle: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 },
+  aiToggleTrack: { width: 44, height: 24, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.1)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)', justifyContent: 'center', paddingHorizontal: 2 },
+  aiToggleTrackActive: { backgroundColor: 'rgba(229,9,20,0.3)', borderColor: 'rgba(229,9,20,0.5)' },
+  aiToggleThumb: { width: 20, height: 20, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.4)' },
+  aiToggleThumbActive: { backgroundColor: colors.red, alignSelf: 'flex-end' },
+  aiToggleLabel: { color: colors.subtle, fontSize: 13, fontWeight: '600' },
+  aiToggleLabelActive: { color: colors.red },
 
   // Search
   searchRow: { flexDirection: 'row', gap: 10, width: '100%', marginBottom: 12 },
@@ -605,4 +703,8 @@ const s = StyleSheet.create({
   notifText: { color: colors.text, fontSize: 14, fontWeight: '600' },
   notifTime: { color: colors.subtle, fontSize: 11, marginTop: 2 },
   notifDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.red },
+  notifAcceptBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(74,222,128,0.15)', borderWidth: 1, borderColor: 'rgba(74,222,128,0.3)', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
+  notifRejectBtn: { backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  notifAcceptedBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(74,222,128,0.1)', borderWidth: 1, borderColor: 'rgba(74,222,128,0.3)', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
+  notifDeleteBtn: { width: 30, height: 30, borderRadius: 15, backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center' },
 });

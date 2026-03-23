@@ -62,6 +62,7 @@ export async function setUserProfile(userId: string, profile: Partial<UserProfil
   const data: any = { uid: userId, email: profile.email || '', updatedAt: now };
   if (profile.displayName) data.displayName = profile.displayName;
   if (profile.photoURL !== undefined) data.photoURL = profile.photoURL;
+  if (profile.marketingOptIn !== undefined) data.marketingOptIn = profile.marketingOptIn;
   const snap = await getDoc(ref);
   if (!snap.exists()) data.createdAt = now;
   await setDoc(ref, data, { merge: true });
@@ -128,7 +129,7 @@ export async function searchUserByUsername(username: string) {
 export async function sendFriendRequest(fromUserId: string, fromUsername: string, toUserId: string): Promise<void> {
   const ref = doc(collection(db, 'users', toUserId, 'friendRequests'));
   await setDoc(ref, { id: ref.id, fromUserId, fromUsername, toUserId, status: 'pending', createdAt: Timestamp.now() });
-  await addNotification(toUserId, 'friend_request', `${fromUsername} sent you a friend request`);
+  await addNotification(toUserId, 'friend_request', `${fromUsername} sent you a friend request`, { fromUserId, requestId: ref.id });
 }
 
 export async function areFriends(userId: string, otherUserId: string): Promise<boolean> {
@@ -284,9 +285,19 @@ export async function markNotificationsRead(userId: string): Promise<void> {
   await Promise.all(updates);
 }
 
-export async function addNotification(userId: string, type: AppNotification['type'], message: string): Promise<void> {
+export async function deleteNotification(userId: string, notifId: string): Promise<void> {
+  await deleteDoc(doc(db, 'users', userId, 'notifications', notifId));
+}
+
+export async function addNotification(userId: string, type: AppNotification['type'], message: string, extra?: Record<string, any>): Promise<void> {
   const ref = doc(collection(db, 'users', userId, 'notifications'));
-  await setDoc(ref, { id: ref.id, type, message, read: false, createdAt: Timestamp.now() });
+  await setDoc(ref, { id: ref.id, type, message, read: false, createdAt: Timestamp.now(), ...extra });
+  // Trigger push notification
+  fetch('https://cinelyse-api.vercel.app/api/notify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId, title: 'CINELYSE', body: message }),
+  }).catch(() => {});
 }
 
 export async function findUsersByEmails(emails: string[], excludeUid: string): Promise<UserProfile[]> {

@@ -76,7 +76,7 @@ export default function RootNavigator() {
         <DeepLinkHandler />
         <Stack.Navigator screenOptions={{ headerShown: false }}>
           {user ? (
-            user.emailVerified ? (
+            user.emailVerified || user.providerData?.some(p => p.providerId === 'google.com') ? (
               <Stack.Screen name="Main" component={TabNavigator} />
             ) : (
               <Stack.Screen name="VerifyEmail" component={VerifyEmailScreen} />
