@@ -465,16 +465,10 @@ export default function DiscoverScreen() {
           )}
         </View>
 
-        {/* ── REPLACED: Trending list → Premium personalised picks ────────────── */}
-        <ScrollView
-          style={s.trendingScroll}
-          contentContainerStyle={s.trendingScrollContent}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
+        {/* ── Premium personalised picks (static, no scroll) ──────────────── */}
+        <View style={{ flex: 1, paddingHorizontal: 22 }}>
           <PremiumPicksSection onUnlock={() => { /* TODO: open paywall */ }} />
-        </ScrollView>
-        {/* ─────────────────────────────────────────────────────────────────────── */}
+        </View>
 
         <SharedMovieModal />
 
@@ -699,7 +693,7 @@ const g = StyleSheet.create({
 
 /** PremiumPicksSection styles */
 const p = StyleSheet.create({
-  wrapper: { paddingBottom: 30 },
+  wrapper: { flex: 1 },
   header: {
     flexDirection: 'row', justifyContent: 'space-between',
     alignItems: 'center', marginBottom: 10,
@@ -715,10 +709,10 @@ const p = StyleSheet.create({
   aiStar: { fontSize: 10, color: '#e05050' },
   aiBadgeText: { color: '#fff', fontSize: 11, fontWeight: '600' },
   divider: { height: 1, backgroundColor: 'rgba(255,255,255,0.06)', marginBottom: 14 },
-  gridContainer: { position: 'relative' },
+  gridContainer: { position: 'relative', overflow: 'hidden', borderRadius: 14 },
   ghostGrid: {
     flexDirection: 'row', flexWrap: 'wrap', gap: 7,
-    opacity: 0.35,
+    opacity: 0.55,
   },
   overlay: {
     position: 'absolute', inset: 0,
