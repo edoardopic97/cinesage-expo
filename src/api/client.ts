@@ -1,12 +1,24 @@
 import axios from 'axios';
+import { auth } from '../lib/firebase';
 
 const API_BASE = 'https://cinelyse-api.vercel.app';
-const OMDB_KEY = '2ff93aac';
+
+async function getAuthHeaders(): Promise<Record<string, string>> {
+  const token = await auth.currentUser?.getIdToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
 
 const api = axios.create({
   baseURL: API_BASE,
   timeout: 30000,
   headers: { 'Content-Type': 'application/json' },
+});
+
+// Attach auth token to every request
+api.interceptors.request.use(async (config) => {
+  const headers = await getAuthHeaders();
+  Object.assign(config.headers, headers);
+  return config;
 });
 
 export interface MovieResult {
@@ -67,16 +79,18 @@ export async function searchMovies(
 export default api;
 
 export async function searchByTitle(query: string): Promise<MovieResult[]> {
-  const res = await axios.get('https://www.omdbapi.com/', {
-    params: { apikey: OMDB_KEY, s: query },
+  const headers = await getAuthHeaders();
+  const res = await axios.get(`${API_BASE}/api/movie/search`, {
+    params: { s: query },
+    headers,
   });
   if (res.data?.Response !== 'True' || !res.data.Search) return [];
-  // Fetch full details for each result
   const details = await Promise.all(
     res.data.Search.slice(0, 10).map(async (m: any) => {
       try {
-        const d = await axios.get('https://www.omdbapi.com/', {
-          params: { apikey: OMDB_KEY, i: m.imdbID },
+        const d = await axios.get(`${API_BASE}/api/movie/details`, {
+          params: { i: m.imdbID },
+          headers,
         });
         if (d.data?.Response !== 'True') return null;
         const r = d.data;

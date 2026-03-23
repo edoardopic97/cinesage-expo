@@ -8,11 +8,9 @@ import LoginScreen from '../screens/LoginScreen';
 import VerifyEmailScreen from '../screens/VerifyEmailScreen';
 import TabNavigator from './TabNavigator';
 import { colors } from '../theme/colors';
-import axios from 'axios';
+import api from '../api/client';
 
 const Stack = createNativeStackNavigator();
-
-const OMDB_KEY = '2ff93aac';
 
 function DeepLinkHandler() {
   const { openSharedMovie } = useSharedMovie();
@@ -24,8 +22,8 @@ function DeepLinkHandler() {
       const match = url.match(/\/movie\/(tt\d+)/);
       if (!match) return;
       try {
-        const res = await axios.get('https://www.omdbapi.com/', {
-          params: { apikey: OMDB_KEY, i: match[1] },
+        const res = await api.get('/api/movie/details', {
+          params: { i: match[1] },
         });
         if (res.data?.Response === 'True') {
           const m = res.data;

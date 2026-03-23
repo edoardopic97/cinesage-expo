@@ -33,7 +33,7 @@ type Category = 'all' | 'movie' | 'tv';
 export default function DiscoverScreen() {
   const insets = useSafeAreaInsets();
   const { user, profile } = useAuth();
-  const { credits, maxCredits, spend } = useCredits(user?.uid);
+  const { credits, maxCredits, refresh } = useCredits(user?.uid);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<MovieResult[]>([]);
   const [allResults, setAllResults] = useState<MovieResult[]>([]);
@@ -97,12 +97,9 @@ export default function DiscoverScreen() {
     const searchQuery = (q || query).trim();
     if (!searchQuery) return;
 
-    if (aiMode) {
-      const ok = await spend();
-      if (!ok) {
-        setError('No credits left today. Credits refresh daily!');
-        return;
-      }
+    if (aiMode && credits <= 0) {
+      setError('No credits left today. Credits refresh daily!');
+      return;
     }
 
     setError(null);
@@ -141,19 +138,21 @@ export default function DiscoverScreen() {
       setAllResults(movies);
       setResults(movies);
     } catch (err: any) {
-      const msg = err?.message || 'Search failed';
+      const msg = err?.response?.status === 429
+        ? 'No credits left today. Credits refresh daily!'
+        : (err?.message || 'Search failed');
       setError(msg);
       setAllResults([]);
       setResults([]);
     } finally {
       setLoading(false);
+      if (aiMode) refresh();
     }
   };
 
   const handleLoadMore = async () => {
     if (!lastQuery || loadingMore) return;
-    const ok = await spend();
-    if (!ok) {
+    if (aiMode && credits <= 0) {
       setError('No credits left today. Credits refresh daily!');
       return;
     }
@@ -174,6 +173,7 @@ export default function DiscoverScreen() {
       setError(err?.message || 'Failed to load more');
     } finally {
       setLoadingMore(false);
+      if (aiMode) refresh();
     }
   };
   const filteredResults = React.useMemo(() => {
