@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Animated, Easing } from 'react-native';
+import { useIsFocused } from '@react-navigation/native';
 import Svg, {
   Circle, Path, Rect, Polygon,
   Defs, LinearGradient, RadialGradient, Stop, G,
@@ -42,43 +43,57 @@ const SIZES = {
   large:  { container: 120, avatar: 80 },
 };
 
-function useRotation(duration: number, direction: 1 | -1 = 1) {
+function useRotation(duration: number, direction: 1 | -1 = 1, active = true) {
   const anim = useRef(new Animated.Value(0)).current;
+  const loopRef = useRef<Animated.CompositeAnimation | null>(null);
   useEffect(() => {
-    Animated.loop(
-      Animated.timing(anim, {
-        toValue: direction,
-        duration,
-        easing: Easing.linear,
-        useNativeDriver: true,
-      }),
-    ).start();
-  }, []);
+    if (active) {
+      loopRef.current = Animated.loop(
+        Animated.timing(anim, {
+          toValue: direction,
+          duration,
+          easing: Easing.linear,
+          useNativeDriver: true,
+        }),
+      );
+      loopRef.current.start();
+    } else {
+      loopRef.current?.stop();
+    }
+    return () => { loopRef.current?.stop(); };
+  }, [active]);
   return anim.interpolate({
     inputRange:  [0, 1],
     outputRange: ['0deg', `${direction * 360}deg`],
   });
 }
 
-function usePulse(min: number, max: number, duration: number) {
+function usePulse(min: number, max: number, duration: number, active = true) {
   const anim = useRef(new Animated.Value(min)).current;
+  const loopRef = useRef<Animated.CompositeAnimation | null>(null);
   useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(anim, { toValue: max, duration: duration / 2, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-        Animated.timing(anim, { toValue: min, duration: duration / 2, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-      ]),
-    ).start();
-  }, []);
+    if (active) {
+      loopRef.current = Animated.loop(
+        Animated.sequence([
+          Animated.timing(anim, { toValue: max, duration: duration / 2, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+          Animated.timing(anim, { toValue: min, duration: duration / 2, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        ]),
+      );
+      loopRef.current.start();
+    } else {
+      loopRef.current?.stop();
+    }
+    return () => { loopRef.current?.stop(); };
+  }, [active]);
   return anim;
 }
 
 /* ─────────────────────────────────────────
    Spectator
 ───────────────────────────────────────── */
-function SpectatorFrame({ children, size }: { children: React.ReactNode; size: 'small' | 'medium' | 'large' }) {
+function SpectatorFrame({ children, size, active }: { children: React.ReactNode; size: 'small' | 'medium' | 'large'; active: boolean }) {
   const s = SIZES[size];
-  const breathe = usePulse(0.4, 0.85, 4000);
+  const breathe = usePulse(0.4, 0.85, 4000, active);
 
   return (
     <View style={{ width: s.container, height: s.container, alignItems: 'center', justifyContent: 'center' }}>
@@ -103,9 +118,9 @@ function SpectatorFrame({ children, size }: { children: React.ReactNode; size: '
 /* ─────────────────────────────────────────
    Cinephile
 ───────────────────────────────────────── */
-function CinephileFrame({ children, size }: { children: React.ReactNode; size: 'small' | 'medium' | 'large' }) {
+function CinephileFrame({ children, size, active }: { children: React.ReactNode; size: 'small' | 'medium' | 'large'; active: boolean }) {
   const s = SIZES[size];
-  const pulse = usePulse(0.3, 0.6, 2500);
+  const pulse = usePulse(0.3, 0.6, 2500, active);
 
   return (
     <View style={{ width: s.container, height: s.container, alignItems: 'center', justifyContent: 'center' }}>
@@ -131,10 +146,10 @@ function CinephileFrame({ children, size }: { children: React.ReactNode; size: '
 /* ─────────────────────────────────────────
    Critic
 ───────────────────────────────────────── */
-function CriticFrame({ children, size }: { children: React.ReactNode; size: 'small' | 'medium' | 'large' }) {
+function CriticFrame({ children, size, active }: { children: React.ReactNode; size: 'small' | 'medium' | 'large'; active: boolean }) {
   const s = SIZES[size];
-  const cwRotation  = useRotation(10000, 1);
-  const ccwRotation = useRotation(18000, -1);
+  const cwRotation  = useRotation(10000, 1, active);
+  const ccwRotation = useRotation(18000, -1, active);
 
   return (
     <View style={{ width: s.container, height: s.container, alignItems: 'center', justifyContent: 'center' }}>
@@ -198,7 +213,7 @@ function CriticFrame({ children, size }: { children: React.ReactNode; size: 'sma
    • Crown is the last child in the View so it always renders
      on top of all rotating layers
 ───────────────────────────────────────── */
-function DirectorFrame({ children, size }: { children: React.ReactNode; size: 'small' | 'medium' | 'large' }) {
+function DirectorFrame({ children, size, active }: { children: React.ReactNode; size: 'small' | 'medium' | 'large'; active: boolean }) {
   const s = SIZES[size];
   const c = s.container;
   const isSmall = size === 'small';
@@ -224,17 +239,17 @@ function DirectorFrame({ children, size }: { children: React.ReactNode; size: 's
   const sw = isSmall ? 4 : isLarge ? 7 : 5.5;
 
   // Rotations
-  const cwRotation   = useRotation(11000, 1);
-  const ccwRotation  = useRotation(19000, -1);
-  const slowRotation = useRotation(32000, 1);
+  const cwRotation   = useRotation(11000, 1, active);
+  const ccwRotation  = useRotation(19000, -1, active);
+  const slowRotation = useRotation(32000, 1, active);
 
   // Glow pulse
-  const glowPulse = usePulse(0.22, 0.42, 3000);
+  const glowPulse = usePulse(0.22, 0.42, 3000, active);
 
   // Ember animations
-  const ember1 = usePulse(0, 1, 3000);
-  const ember2 = usePulse(0, 1, 4000);
-  const ember3 = usePulse(0, 1, 2500);
+  const ember1 = usePulse(0, 1, 3000, active);
+  const ember2 = usePulse(0, 1, 4000, active);
+  const ember3 = usePulse(0, 1, 2500, active);
 
   const ember1Opacity    = ember1.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.95, 0.4,  0.95] });
   const ember1TranslateY = ember1.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0, -7, 0] });
@@ -478,10 +493,11 @@ function DirectorFrame({ children, size }: { children: React.ReactNode; size: 's
    Main export
 ───────────────────────────────────────── */
 export default function ProfileRing({ tier, size = 'medium', children }: Props) {
+  const focused = useIsFocused();
   switch (tier) {
-    case 'cinephile': return <CinephileFrame size={size}>{children}</CinephileFrame>;
-    case 'critic':    return <CriticFrame    size={size}>{children}</CriticFrame>;
-    case 'director':  return <DirectorFrame  size={size}>{children}</DirectorFrame>;
-    default:          return <SpectatorFrame size={size}>{children}</SpectatorFrame>;
+    case 'cinephile': return <CinephileFrame size={size} active={focused}>{children}</CinephileFrame>;
+    case 'critic':    return <CriticFrame    size={size} active={focused}>{children}</CriticFrame>;
+    case 'director':  return <DirectorFrame  size={size} active={focused}>{children}</DirectorFrame>;
+    default:          return <SpectatorFrame size={size} active={focused}>{children}</SpectatorFrame>;
   }
 }

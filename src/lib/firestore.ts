@@ -1,6 +1,7 @@
 import {
   doc, getDoc, setDoc, updateDoc, collection, query, where,
   getDocs, deleteDoc, Timestamp, onSnapshot, type Unsubscribe,
+  limit, startAfter, orderBy, type QueryDocumentSnapshot,
 } from 'firebase/firestore';
 import { db } from './firebase';
 
@@ -194,6 +195,7 @@ export async function rateMovie(userId: string, movieId: string, rating: number)
   }
 }
 
+
 export async function removeMovieFromWatched(userId: string, movieId: string): Promise<void> {
   const ref = doc(db, 'users', userId, 'movies', movieId);
   const snap = await getDoc(ref);
@@ -241,6 +243,22 @@ export function subscribeToMovieList(userId: string, listType: 'watched' | 'toWa
   return onSnapshot(q, (snap) => {
     callback(snap.docs.map(d => d.data() as MovieActivity));
   });
+}
+
+export async function getMovieListPaginated(
+  userId: string,
+  listType: 'watched' | 'toWatch' | 'favorite',
+  pageSize: number = 20,
+  lastDoc?: QueryDocumentSnapshot,
+): Promise<{ movies: MovieActivity[]; lastDoc: QueryDocumentSnapshot | null }> {
+  const constraints: any[] = [where(listType, '==', true), orderBy('updatedAt', 'desc'), limit(pageSize)];
+  if (lastDoc) constraints.push(startAfter(lastDoc));
+  const q = query(collection(db, 'users', userId, 'movies'), ...constraints);
+  const snap = await getDocs(q);
+  return {
+    movies: snap.docs.map(d => d.data() as MovieActivity),
+    lastDoc: snap.docs.length > 0 ? snap.docs[snap.docs.length - 1] : null,
+  };
 }
 
 export async function updateUserProfile(userId: string, updates: Partial<UserProfile>): Promise<void> {

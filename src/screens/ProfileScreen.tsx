@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView, Image, Alert,
-  TextInput, FlatList, Dimensions,
+  TextInput, FlatList, Dimensions, Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -13,7 +13,7 @@ import { subscribeToMovieList, getUserStats, getSearchCount, getFriends, type Mo
 import { sortMovies, filterByGenre, searchByTitle, getUniqueGenres } from '../lib/movieUtils';
 import EditProfileModal from '../components/EditProfileModal';
 import ProfileMovieModal from '../components/ProfileMovieModal';
-import ProfileRing, { getTier, getNextTier, TIER_META } from '../components/ProfileRing';
+import ProfileRing, { getTier, getNextTier, TIER_META, type Tier } from '../components/ProfileRing';
 
 const { width: SW } = Dimensions.get('window');
 const GRID_COLS = 3;
@@ -48,6 +48,7 @@ export default function ProfileScreen() {
   const [selectedMovie, setSelectedMovie] = useState<MovieActivity | null>(null);
   const [searchCount, setSearchCount] = useState(0);
   const [friendsCount, setFriendsCount] = useState(0);
+  const [showTierInfo, setShowTierInfo] = useState(false);
 
   useEffect(() => {
     if (!user?.uid) return;
@@ -306,12 +307,19 @@ export default function ProfileScreen() {
               {/* Tier ring card */}
               <View style={s.card}>
                 <View style={{ alignItems: 'center', gap: 10 }}>
-                  <ProfileRing tier={tier}>
-                    <View style={[s.avatarInner, { width: 60, height: 60 }]}>
-                      <Text style={{ color: tierMeta.color, fontSize: 22, fontWeight: '900' }}>{searchCount}</Text>
+                  <TouchableOpacity onPress={() => setShowTierInfo(true)} activeOpacity={0.7}>
+                    <ProfileRing tier={tier}>
+                      <View style={[s.avatarInner, { width: 60, height: 60 }]}>
+                        <Text style={{ color: tierMeta.color, fontSize: 22, fontWeight: '900' }}>{searchCount}</Text>
+                      </View>
+                    </ProfileRing>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => setShowTierInfo(true)} activeOpacity={0.7}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={{ color: tierMeta.color, fontSize: 16, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1 }}>{tierMeta.label}</Text>
+                      <Ionicons name="information-circle-outline" size={16} color={colors.subtle} />
                     </View>
-                  </ProfileRing>
-                  <Text style={{ color: tierMeta.color, fontSize: 16, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1 }}>{tierMeta.label}</Text>
+                  </TouchableOpacity>
                   <Text style={{ color: colors.subtle, fontSize: 12 }}>
                     {next ? `${needed - searchCount} more searches to ${TIER_META[next].label}` : 'Max level reached 🏆'}
                   </Text>
@@ -372,7 +380,7 @@ export default function ProfileScreen() {
                   <View style={s.actDivider}>
                     <Ionicons name="star" size={14} color={colors.gold} />
                     <Text style={s.actLabel}>Average Rating</Text>
-                    <Text style={[s.actValue, { color: colors.gold }]}>{avgRating}/5</Text>
+                    <Text style={[s.actValue, { color: colors.gold }]}>{avgRating}/10</Text>
                   </View>
                 )}
               </View>
@@ -384,6 +392,41 @@ export default function ProfileScreen() {
 
       <EditProfileModal visible={editVisible} onClose={() => setEditVisible(false)} onSaved={() => {}} />
       <ProfileMovieModal movie={selectedMovie} onClose={() => setSelectedMovie(null)} />
+
+      {/* Tier Info Modal */}
+      <Modal visible={showTierInfo} transparent animationType="fade" onRequestClose={() => setShowTierInfo(false)}>
+        <TouchableOpacity style={s.tierOverlay} activeOpacity={1} onPress={() => setShowTierInfo(false)}>
+          <View style={s.tierModal}>
+            <View style={s.tierModalHeader}>
+              <Text style={s.tierModalTitle}>Tier Levels</Text>
+              <TouchableOpacity onPress={() => setShowTierInfo(false)}>
+                <Ionicons name="close" size={20} color={colors.muted} />
+              </TouchableOpacity>
+            </View>
+            <Text style={s.tierModalSub}>Earn tiers by searching with AI</Text>
+            {(['spectator', 'cinephile', 'critic', 'director'] as Tier[]).map((t) => {
+              const meta = TIER_META[t];
+              const current = getTier(searchCount) === t;
+              return (
+                <View key={t} style={[s.tierInfoRow, current && s.tierInfoRowActive]}>
+                  <ProfileRing tier={t} size="small">
+                    <View style={[s.tierInfoAvatar, { borderColor: meta.color }]}>
+                      <Text style={{ color: meta.color, fontSize: 12, fontWeight: '900' }}>{meta.min}</Text>
+                    </View>
+                  </ProfileRing>
+                  <View style={{ flex: 1 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={[s.tierInfoName, { color: meta.color }]}>{meta.label}</Text>
+                      {current && <View style={[s.tierInfoBadge, { backgroundColor: meta.color }]}><Text style={s.tierInfoBadgeText}>YOU</Text></View>}
+                    </View>
+                    <Text style={s.tierInfoReq}>{meta.min === 0 ? 'Starting tier' : `${meta.min}+ AI searches`}</Text>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -474,4 +517,17 @@ const s = StyleSheet.create({
   actLabel: { color: colors.muted, fontSize: 13, flex: 1 },
   actValue: { color: colors.white, fontSize: 16, fontWeight: '800' },
   actDivider: { flexDirection: 'row', alignItems: 'center', gap: 10, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.06)', paddingTop: 12, marginTop: 4 },
+  // Tier info modal
+  tierOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center', padding: 24 },
+  tierModal: { width: '100%', backgroundColor: '#1a1a1a', borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', padding: 20 },
+  tierModalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  tierModalTitle: { color: colors.white, fontSize: 18, fontWeight: '800' },
+  tierModalSub: { color: colors.subtle, fontSize: 12, marginBottom: 16 },
+  tierInfoRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)' },
+  tierInfoRowActive: { backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: 10, paddingHorizontal: 8, marginHorizontal: -8 },
+  tierInfoAvatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.05)', alignItems: 'center', justifyContent: 'center' },
+  tierInfoName: { fontSize: 14, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
+  tierInfoReq: { color: colors.subtle, fontSize: 11, marginTop: 1 },
+  tierInfoBadge: { borderRadius: 4, paddingHorizontal: 6, paddingVertical: 1 },
+  tierInfoBadgeText: { color: colors.white, fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
 });

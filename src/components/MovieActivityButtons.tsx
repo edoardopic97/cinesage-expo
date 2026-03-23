@@ -107,15 +107,24 @@ export default function MovieActivityButtons({ movie, compact = false }: Props) 
         </TouchableOpacity>
         <TouchableOpacity style={[s.compactBtn, rating > 0 && s.compactBtnActiveGold]} onPress={() => setShowRating(!showRating)} disabled={loading}>
           <Ionicons name="star" size={14} color={rating > 0 ? '#000' : colors.muted} />
-          <Text style={[s.compactLabel, rating > 0 && { color: '#000' }]}>{rating > 0 ? rating.toFixed(1) : 'Rate'}</Text>
+          <Text style={[s.compactLabel, rating > 0 && { color: '#000' }]}>{rating > 0 ? `${rating}/10` : 'Rate'}</Text>
         </TouchableOpacity>
         {showRating && (
-          <View style={s.ratingRow}>
-            {[1, 2, 3, 4, 5].map(r => (
-              <TouchableOpacity key={r} style={[s.ratingStar, rating >= r && s.ratingStarActive]} onPress={() => handleRate(r)}>
-                <Ionicons name="star" size={14} color={rating >= r ? colors.gold : colors.subtle} />
-              </TouchableOpacity>
-            ))}
+          <View style={s.ratingGrid}>
+            <View style={s.ratingRow}>
+              {[1, 2, 3, 4, 5].map(r => (
+                <TouchableOpacity key={r} style={[s.ratingStar, rating === r && s.ratingStarActive]} onPress={() => handleRate(r)}>
+                  <Text style={{ color: rating === r ? colors.gold : colors.subtle, fontSize: 12, fontWeight: '700' }}>{r}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <View style={s.ratingRow}>
+              {[6, 7, 8, 9, 10].map(r => (
+                <TouchableOpacity key={r} style={[s.ratingStar, rating === r && s.ratingStarActive]} onPress={() => handleRate(r)}>
+                  <Text style={{ color: rating === r ? colors.gold : colors.subtle, fontSize: 12, fontWeight: '700' }}>{r}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
           </View>
         )}
       </View>
@@ -138,15 +147,24 @@ export default function MovieActivityButtons({ movie, compact = false }: Props) 
       </TouchableOpacity>
       <TouchableOpacity style={[s.fullBtn, rating > 0 && s.fullBtnActiveGold]} onPress={() => setShowRating(!showRating)} disabled={loading}>
         <Ionicons name="star" size={18} color={rating > 0 ? '#000' : colors.muted} />
-        <Text style={[s.fullLabel, rating > 0 && { color: '#000' }]}>{rating > 0 ? `Rated ${rating}/5` : 'Rate Movie'}</Text>
+        <Text style={[s.fullLabel, rating > 0 && { color: '#000' }]}>{rating > 0 ? `Rated ${rating}/10` : 'Rate Movie'}</Text>
       </TouchableOpacity>
       {showRating && (
-        <View style={s.ratingRowFull}>
-          {[1, 2, 3, 4, 5].map(r => (
-            <TouchableOpacity key={r} style={[s.ratingStarFull, rating >= r && s.ratingStarActive]} onPress={() => handleRate(r)}>
-              <Ionicons name="star" size={18} color={rating >= r ? colors.gold : colors.subtle} />
-            </TouchableOpacity>
-          ))}
+        <View style={s.ratingGridFull}>
+          <View style={s.ratingRowFull}>
+            {[1, 2, 3, 4, 5].map(r => (
+              <TouchableOpacity key={r} style={[s.ratingStarFull, rating === r && s.ratingStarActive]} onPress={() => handleRate(r)}>
+                <Text style={{ color: rating === r ? colors.gold : colors.subtle, fontSize: 15, fontWeight: '700' }}>{r}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <View style={s.ratingRowFull}>
+            {[6, 7, 8, 9, 10].map(r => (
+              <TouchableOpacity key={r} style={[s.ratingStarFull, rating === r && s.ratingStarActive]} onPress={() => handleRate(r)}>
+                <Text style={{ color: rating === r ? colors.gold : colors.subtle, fontSize: 15, fontWeight: '700' }}>{r}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
       )}
     </View>
@@ -164,12 +182,13 @@ const s = StyleSheet.create({
   compactBtnActiveRed: { backgroundColor: colors.red, borderColor: colors.red },
   compactBtnActiveGold: { backgroundColor: colors.gold, borderColor: colors.gold },
   compactLabel: { color: colors.muted, fontSize: 12, fontWeight: '600' },
-  ratingRow: { flexDirection: 'row', gap: 4, width: '100%', marginTop: 4 },
+  ratingGrid: { width: '100%', marginTop: 4, gap: 4 },
+  ratingRow: { flexDirection: 'row', gap: 4 },
   ratingStar: {
-    flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 6,
-    backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 4,
+    flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 8,
+    backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 6,
   },
-  ratingStarActive: { backgroundColor: 'rgba(245,197,24,0.2)' },
+  ratingStarActive: { backgroundColor: 'rgba(245,197,24,0.25)', borderWidth: 1, borderColor: 'rgba(245,197,24,0.5)' },
   // Full
   fullCol: { gap: 10 },
   fullBtn: {
@@ -180,9 +199,10 @@ const s = StyleSheet.create({
   fullBtnActiveRed: { backgroundColor: colors.red, borderColor: colors.red },
   fullBtnActiveGold: { backgroundColor: colors.gold, borderColor: colors.gold },
   fullLabel: { color: colors.muted, fontSize: 14, fontWeight: '600' },
-  ratingRowFull: { flexDirection: 'row', gap: 8, padding: 10, backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: 8 },
+  ratingGridFull: { gap: 6, padding: 10, backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: 8 },
+  ratingRowFull: { flexDirection: 'row', gap: 6 },
   ratingStarFull: {
-    flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 8,
-    backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 4,
+    flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 10,
+    backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 6,
   },
 });

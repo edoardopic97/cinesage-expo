@@ -79,8 +79,9 @@ export default function ProfileMovieModal({ movie, onClose, readOnly = false }: 
             {movie.rating && movie.rating > 0 && (
               <View style={s.yourRating}>
                 <Text style={s.detailLabel}>Your Rating</Text>
-                <View style={{ flexDirection: 'row', gap: 4, marginTop: 4 }}>
-                  {[1,2,3,4,5].map(r => <Ionicons key={r} name="star" size={18} color={movie.rating! >= r ? colors.gold : colors.subtle} />)}
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                  <Ionicons name="star" size={18} color={colors.gold} />
+                  <Text style={{ color: colors.gold, fontSize: 18, fontWeight: '800' }}>{movie.rating}/10</Text>
                 </View>
               </View>
             )}

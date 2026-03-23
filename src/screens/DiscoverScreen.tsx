@@ -30,6 +30,17 @@ const RATINGS = ['Any', '7+', '8+', '9+'];
 
 type Category = 'all' | 'movie' | 'tv';
 
+function getResetTime(): string {
+  const now = new Date();
+  const midnight = new Date(now);
+  midnight.setHours(24, 0, 0, 0);
+  const diff = midnight.getTime() - now.getTime();
+  const h = Math.floor(diff / 3600000);
+  const m = Math.floor((diff % 3600000) / 60000);
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
 export default function DiscoverScreen() {
   const insets = useSafeAreaInsets();
   const { user, profile } = useAuth();
@@ -98,7 +109,7 @@ export default function DiscoverScreen() {
     if (!searchQuery) return;
 
     if (aiMode && credits <= 0) {
-      setError('No credits left today. Credits refresh daily!');
+      setError(`No AI credits left. Resets in ${getResetTime()}`);
       return;
     }
 
@@ -139,7 +150,7 @@ export default function DiscoverScreen() {
       setResults(movies);
     } catch (err: any) {
       const msg = err?.response?.status === 429
-        ? 'No credits left today. Credits refresh daily!'
+        ? `No AI credits left. Resets in ${getResetTime()}`
         : (err?.message || 'Search failed');
       setError(msg);
       setAllResults([]);
@@ -153,7 +164,7 @@ export default function DiscoverScreen() {
   const handleLoadMore = async () => {
     if (!lastQuery || loadingMore) return;
     if (aiMode && credits <= 0) {
-      setError('No credits left today. Credits refresh daily!');
+      setError(`No AI credits left. Resets in ${getResetTime()}`);
       return;
     }
     setLoadingMore(true);
@@ -252,9 +263,9 @@ export default function DiscoverScreen() {
                     <Text style={s.aiStar}>✦</Text>
                     <Text style={s.topChipTextRed}>AI</Text>
                   </View>
-                  <View style={s.streakPill}>
-                    <Ionicons name="flash" size={12} color={credits > 0 ? colors.gold : colors.subtle} />
-                    <Text style={[s.topChipTextGold, credits === 0 && { color: colors.subtle }]}>{credits === Infinity ? '∞' : credits}/{maxCredits === Infinity ? '∞' : maxCredits}</Text>
+                  <View style={[s.streakPill, credits <= 1 && credits !== Infinity && s.streakPillLow]}>
+                    <Ionicons name="flash" size={12} color={credits <= 1 && credits !== Infinity ? colors.red : credits > 0 ? colors.gold : colors.subtle} />
+                    <Text style={[s.topChipTextGold, credits <= 1 && credits !== Infinity && { color: colors.red }, credits === 0 && { color: colors.subtle }]}>{credits === Infinity ? '∞' : credits}/{maxCredits === Infinity ? '∞' : maxCredits}</Text>
                   </View>
                 </>
               )}
@@ -309,6 +320,18 @@ export default function DiscoverScreen() {
               </LinearGradient>
             </TouchableOpacity>
           </View>
+
+          {/* Low credit banner */}
+          {aiMode && credits <= 1 && credits !== Infinity && (
+            <View style={s.creditBanner}>
+              <Ionicons name={credits === 0 ? 'alert-circle' : 'warning'} size={16} color={credits === 0 ? colors.red : colors.gold} />
+              <Text style={[s.creditBannerText, credits === 0 && { color: colors.red }]}>
+                {credits === 0
+                  ? `No AI credits left · Resets in ${getResetTime()}`
+                  : `1 AI credit left · Resets in ${getResetTime()}`}
+              </Text>
+            </View>
+          )}
 
           {/* Filters */}
           {aiMode && (
@@ -579,6 +602,10 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(255,200,0,0.08)',
     borderWidth: 1, borderColor: 'rgba(255,180,0,0.3)',
   },
+  streakPillLow: {
+    backgroundColor: 'rgba(229,9,20,0.1)',
+    borderColor: 'rgba(229,9,20,0.4)',
+  },
   topChipTextGold: { color: colors.gold, fontSize: 12, fontWeight: '700' },
   bellBtn: {
     width: 34, height: 34, borderRadius: 17,
@@ -626,6 +653,14 @@ const s = StyleSheet.create({
     shadowColor: 'rgba(200,40,40,0.45)', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 1, shadowRadius: 20, elevation: 8,
   },
   playIcon: { color: colors.white, fontSize: 20 },
+
+  // Credit banner
+  creditBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: 'rgba(255,200,0,0.08)', borderWidth: 1, borderColor: 'rgba(255,180,0,0.2)',
+    borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 12,
+  },
+  creditBannerText: { color: colors.gold, fontSize: 12, fontWeight: '600', flex: 1 },
 
   // Filters
   filterRow: { flexDirection: 'row', gap: 8, marginBottom: 20, alignItems: 'center', width: '100%', zIndex: 99 },
